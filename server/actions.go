@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
+	"sync"
 )
 
 // Action is one button. The client draws label, colours it by style, and on a press
@@ -221,12 +223,20 @@ func skillActions(c *Context) []Action {
 // runActions are things to run, not keys — which is why they sit with the content
 // and not with the keyboard.
 func runActions(c *Context) []Action {
-	out := []Action{
-		key("claude", "claude", "cmd", true, ""),
-		key("codex", "codex", "cmd", true, ""),
+	// Only what this machine can actually run. A button for a command that is not
+	// installed is worse than no button: it looks like a feature and answers with
+	// "command not found". cch and cgit in particular are one person's own
+	// scripts, and they were offered to everybody.
+	var out []Action
+	for _, name := range []string{"claude", "codex"} {
+		if installed(name) {
+			out = append(out, key(name, name, "cmd", true, ""))
+		}
+	}
+	out = append(out,
 		key("ls -la", "ls -la", "cmd", true, ""),
 		key("^R", "\x12", "key", false, "history search"),
-	}
+	)
 	// Offered when there is something to look at, and not otherwise.
 	if c.Git != nil && c.Git.Dirty > 0 {
 		out = append(out,
@@ -234,11 +244,31 @@ func runActions(c *Context) []Action {
 			key("git diff", "git diff", "cmd", true, ""),
 		)
 	}
-	out = append(out,
-		key("cch", "cch", "cmd", true, "Claude Code panel"),
-		key("cgit", "cgit", "cmd", true, "git panel"),
-	)
+	if installed("cch") {
+		out = append(out, key("cch", "cch", "cmd", true, "Claude Code panel"))
+	}
+	if installed("cgit") {
+		out = append(out, key("cgit", "cgit", "cmd", true, "git panel"))
+	}
 	return out
+}
+
+// installed reports whether a command exists on this machine.
+//
+// Looked up once and remembered: this runs on every context refresh, and a PATH
+// search per button per refresh is a filesystem walk nobody asked for. A command
+// installed while the server is running therefore needs a restart to appear,
+// which is the right trade — the alternative is scanning PATH several times a
+// second forever.
+var installedCache sync.Map
+
+func installed(name string) bool {
+	if cached, ok := installedCache.Load(name); ok {
+		return cached.(bool)
+	}
+	_, err := exec.LookPath(name)
+	installedCache.Store(name, err == nil)
+	return err == nil
 }
 
 func trim(text string, limit int) string {

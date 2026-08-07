@@ -39,39 +39,62 @@ public class KeyPad extends LinearLayout {
         this.buttons = buttons;
         setOrientation(VERTICAL);
 
-        // Four columns. Escape and the two ways to kill something sit on the top
-        // row; Enter takes the full width at the bottom, where two of its four
-        // error directions are the window edge and a miss costs nothing.
+        // Three columns, not four. Wider keys are easier to hit with a ray, and
+        // three is what the arrow cluster below needs to sit square.
         addView(row(
                 key("Esc", ESC, Buttons.WARN, "cancel, everywhere"),
                 key("^C", "\u0003", Buttons.WARN, "interrupt"),
-                key("^D", "\u0004", Buttons.WARN, "end of input — closes a shell"),
-                key("^L", "\u000c", Buttons.KEY, "clear the screen")));
+                key("^D", "\u0004", Buttons.WARN, "end of input — closes a shell")));
 
         addView(row(
+                key("^L", "\u000c", Buttons.KEY, "clear the screen"),
                 key("Tab", "\t", Buttons.KEY, "complete"),
-                key("\u232b", "\u007f", Buttons.KEY, "backspace"),
+                glyphKey(Glyphs.Kind.BACKSPACE, "\u007f", Buttons.KEY, "backspace")));
+
+        // ^W and ^U flank the up arrow rather than sitting in a row of their own.
+        // Nothing is left empty and the cluster still reads as the inverted T every
+        // keyboard has, because the arrows carry a colour of their own — the shape
+        // survives having neighbours.
+        addView(row(
                 key("^W", "\u0017", Buttons.KEY, "delete the word before the cursor"),
+                repeating(Glyphs.Kind.UP, ESC + "[A", Buttons.ARROW, "up — previous command"),
                 key("^U", "\u0015", Buttons.KEY, "delete to the start of the line")));
 
-        // Arrows in reading order rather than as a cross: a cross needs a column
-        // of its own and this grid has no room to spare.
         addView(row(
-                repeating("←", ESC + "[D", Buttons.KEY, "left"),
-                repeating("↓", ESC + "[B", Buttons.KEY, "down"),
-                repeating("↑", ESC + "[A", Buttons.KEY, "up — previous command"),
-                repeating("→", ESC + "[C", Buttons.KEY, "right")));
+                repeating(Glyphs.Kind.LEFT, ESC + "[D", Buttons.ARROW, "left"),
+                repeating(Glyphs.Kind.DOWN, ESC + "[B", Buttons.ARROW, "down"),
+                repeating(Glyphs.Kind.RIGHT, ESC + "[C", Buttons.ARROW, "right")));
 
+        // Enter takes the full width at the bottom, where two of its four error
+        // directions are the window edge and a miss costs nothing.
         addView(row(key("Enter", "\r", Buttons.ENTER, "run it")));
+    }
+
+    /**
+     * An empty cell, so a row of three can hold fewer keys and still line up.
+     *
+     * <p>{@link android.widget.Space} rather than a bare {@code View}, and the
+     * difference is not cosmetic: a plain View asked to WRAP_CONTENT answers with
+     * the whole space offered to it, because {@code getDefaultSize} returns the
+     * spec size for AT_MOST. The first version of this row therefore measured 1216
+     * pixels tall and left nothing for the three rows below it — the arrows and
+     * Enter were built, added, and given zero height.
+     */
+    private View spacer() {
+        return new android.widget.Space(getContext());
     }
 
     private View key(String label, String bytes, int style, String hint) {
         return buttons.key(label, style, hint, v -> send.send(bytes));
     }
 
+    private View glyphKey(Glyphs.Kind kind, String bytes, int style, String hint) {
+        return buttons.glyphKey(kind, style, hint, v -> send.send(bytes));
+    }
+
     /** Arrows and paging: one press per line makes a list unusable. */
-    private View repeating(String label, String bytes, int style, String hint) {
-        View view = buttons.key(label, style, hint, v -> send.send(bytes));
+    private View repeating(Glyphs.Kind kind, String bytes, int style, String hint) {
+        View view = buttons.glyphKey(kind, style, hint, v -> send.send(bytes));
         buttons.repeatOnHold(view, () -> send.send(bytes));
         return view;
     }

@@ -3,7 +3,9 @@ package dev.butschster.linuxterminal;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.LayerDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Handler;
 import android.os.Looper;
@@ -35,6 +37,7 @@ public class Buttons {
     public static final int WARN = 3;
     public static final int ENTER = 4;
     public static final int VOICE = 5;
+    public static final int ARROW = 6;
 
     // Four roles, not eight decorative shades. The previous palette had two greys
     // sixteen units apart, which through pancake lenses is one grey.
@@ -45,10 +48,18 @@ public class Buttons {
             Color.rgb(122, 58, 30),     // WARN — destructive
             Color.rgb(38, 86, 62),      // ENTER
             Color.rgb(52, 118, 84),     // VOICE
+            Color.rgb(74, 80, 104),     // ARROW — the cluster the hand finds without looking
     };
 
     public static final int TEXT = Color.rgb(224, 226, 232);
     public static final int MUTED = Color.rgb(150, 155, 168);
+
+    /**
+     * Every line in the bar, horizontal or vertical. One constant because they are
+     * one idea: the rules between groups and the divider between the panels have to
+     * be the same weight and the same colour, or the bar looks like two designs.
+     */
+    public static final int RULE = Color.rgb(52, 54, 64);
 
     /** Auto-repeat, for arrows and paging. */
     private static final long REPEAT_DELAY_MS = 400;
@@ -77,6 +88,29 @@ public class Buttons {
         return dp(gap);
     }
 
+    /**
+     * How far anything sits from the edge of the panel it is in — one number for
+     * the whole bar, because an inset that differs between two blocks reads as a
+     * misalignment however defensible each half is on its own.
+     *
+     * <p>Watch for the cells that carry their own margin: {@link KeyPad} gives
+     * every key half a gap on each side, so a container holding those pads by
+     * {@code inset() - gap() / 2} and the key still lands on this line.
+     */
+    public int inset() {
+        return dp(10);
+    }
+
+    /**
+     * The optical size every icon in the bar draws at, drawn or font-based alike —
+     * {@link #icon} already sizes the Material Icons font this many dp above the key
+     * text, so {@link Glyphs} icons take the same number instead of inventing their
+     * own, and the two systems read as one alphabet rather than two adjacent ones.
+     */
+    public int iconSizeDp() {
+        return textDp + 3;
+    }
+
     // ------------------------------------------------------------------ making
 
     public TextView key(String label, int style, String hint, View.OnClickListener onClick) {
@@ -91,6 +125,7 @@ public class Buttons {
         view.setMinWidth(dp(minWidth));
         view.setMinHeight(dp(minHeight));
         view.setBackground(background(FILL[style]));
+        engrave(view);
         view.setClickable(true);
         view.setFocusable(false);
         debounced(view, onClick);
@@ -98,11 +133,152 @@ public class Buttons {
         return view;
     }
 
+    /**
+     * The shallow shadow that makes a legend look cut into the cap rather than
+     * printed on it.
+     *
+     * <p>Cut one way rather than the other, deliberately. A true engraving darkens
+     * the letter and lights its lower lip, and darkening is the one thing this bar
+     * cannot spend: `docs/readability.md` measures where text stops being readable
+     * through the lenses and the sizes here are already near it. A shadow below
+     * full-strength text buys the same depth and costs no contrast.
+     */
+    private void engrave(TextView view) {
+        // Above the letter, not below it. A shadow underneath means the letter
+        // stands on the cap and throws its shadow down — a sticker. A groove is
+        // shadowed by its own upper edge, so the shadow goes on top and the letter
+        // reads as cut in. This also settles what looked like a trade earlier:
+        // direction alone gives the engraving, and none of the contrast that
+        // darkening the letter would have cost.
+        //
+        // Radius almost zero rather than zero: a blur radius of 0 is not drawn at
+        // all on a hardware canvas, and a hair above it is the hard-edged copy that
+        // reads as an edge rather than a glow.
+        view.setShadowLayer(0.001f, 0f, -dp(1), Color.argb(190, 0, 0, 0));
+    }
+
     public TextView icon(String glyph, int style, String hint, View.OnClickListener onClick) {
         TextView view = key(glyph, style, hint, onClick);
         view.setTypeface(icons);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, textDp + 3);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, iconSizeDp());
         return view;
+    }
+
+    /**
+     * A key whose face is drawn with {@link Glyphs} instead of typed as a Unicode
+     * character: the arrow keys and backspace. The label stays empty — the drawable
+     * is the label — so {@link #key}'s own centring puts the shape dead centre of
+     * the cell with no text to share the box with.
+     */
+    public TextView glyphKey(Glyphs.Kind kind, int style, String hint, View.OnClickListener onClick) {
+        TextView view = key("", style, hint, onClick);
+        centre(view, kind);
+        return view;
+    }
+
+    /**
+     * Puts the glyph dead centre of the key, which a compound drawable does not.
+     * A compound drawable is laid out beside the text and the pair is centred
+     * together — with no text that is a box of one item plus the gap where the
+     * text would have been, so every drawn key sat visibly left of centre. A
+     * foreground is drawn over the cap at its own gravity and takes no part in
+     * layout at all.
+     */
+    private void centre(TextView view, Glyphs.Kind kind) {
+        view.setCompoundDrawables(null, null, null, null);
+        Drawable glyph = Glyphs.drawable(context, kind, TEXT, iconSizeDp());
+        LayerDrawable stack = new LayerDrawable(new Drawable[]{view.getBackground(), glyph});
+        stack.setLayerGravity(1, Gravity.CENTER);
+        stack.setLayerSize(1, glyph.getIntrinsicWidth(), glyph.getIntrinsicHeight());
+        view.setBackground(stack);
+    }
+
+    /**
+     * Two keys under one cap, split by a hairline — bigger and smaller, up and
+     * down. They are one control because they are one decision taken twice, and a
+     * rocker says so the way two loose buttons never do: the pair cannot drift
+     * apart, and the hand learns one place instead of two.
+     *
+     * <p>The cap owns the shape and clips to it, so each half can be a plain
+     * rectangle that lights up when pressed and still comes out round at the
+     * corners it shares with the cap.
+     */
+    public LinearLayout rocker(View top, View bottom) {
+        LinearLayout cap = new LinearLayout(context);
+        cap.setOrientation(LinearLayout.VERTICAL);
+        cap.setBackground(rocked());
+        cap.setClipToOutline(true);
+
+        cap.addView(top, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Two lines, not one: a groove is dark on its upper side and catches light
+        // on its lower one, which is what tells the eye there is a step here at all.
+        // A single hairline in the cap's own colour family disappeared against it.
+        View shadowLine = new View(context);
+        shadowLine.setBackgroundColor(shade(FILL[KEY], -34));
+        cap.addView(shadowLine, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+
+        View lightLine = new View(context);
+        lightLine.setBackgroundColor(shade(FILL[KEY], 26));
+        cap.addView(lightLine, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+
+        cap.addView(bottom, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        return cap;
+    }
+
+    /**
+     * The cap of a rocker, lit the way a rocker is lit: brighter along the top and
+     * bottom edges, falling away towards the split in the middle. That is what the
+     * shape does to light — both halves tilt up at their outer edge — so the
+     * gradient is a description of the object rather than decoration on it, and it
+     * says which way each half will go before it is pressed.
+     */
+    private GradientDrawable rocked() {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
+        shape.setColors(new int[]{shade(FILL[KEY], 16), shade(FILL[KEY], -10), shade(FILL[KEY], 16)});
+        shape.setCornerRadius(dp(8));
+        return shape;
+    }
+
+    /** Lighter or darker by an equal step on every channel, so the hue does not drift. */
+    private static int shade(int colour, int step) {
+        return Color.rgb(
+                Math.max(0, Math.min(255, Color.red(colour) + step)),
+                Math.max(0, Math.min(255, Color.green(colour) + step)),
+                Math.max(0, Math.min(255, Color.blue(colour) + step)));
+    }
+
+    /**
+     * One half of a {@link #rocker}: a key with no cap of its own, so the cap's
+     * corners are the only ones in play.
+     */
+    public TextView half(String label, String hint, View.OnClickListener onClick) {
+        TextView view = key(label, KEY, hint, onClick);
+        view.setBackground(pressOnly());
+        return view;
+    }
+
+    public TextView glyphHalf(Glyphs.Kind kind, String hint, View.OnClickListener onClick) {
+        TextView view = half("", hint, onClick);
+        centre(view, kind);
+        return view;
+    }
+
+    /** Transparent until pressed, and then only a wash: the cap underneath is the button. */
+    private StateListDrawable pressOnly() {
+        StateListDrawable states = new StateListDrawable();
+        GradientDrawable pressed = new GradientDrawable();
+        pressed.setColor(Color.argb(70, 255, 255, 255));
+        GradientDrawable idle = new GradientDrawable();
+        idle.setColor(Color.TRANSPARENT);
+        states.addState(new int[]{android.R.attr.state_pressed}, pressed);
+        states.addState(new int[]{}, idle);
+        return states;
     }
 
     /**
@@ -183,10 +359,42 @@ public class Buttons {
      */
     private StateListDrawable background(int fill) {
         StateListDrawable states = new StateListDrawable();
+        // Pressed is the one state with no lip: the cap sits down flush with the
+        // deck, which is what pressing a key does and costs nothing to draw.
         states.addState(new int[]{android.R.attr.state_pressed}, solid(lighten(fill, 0.35f)));
-        states.addState(new int[]{android.R.attr.state_hovered}, solid(lighten(fill, 0.18f)));
-        states.addState(new int[]{}, solid(fill));
+        states.addState(new int[]{android.R.attr.state_hovered}, capped(lighten(fill, 0.18f)));
+        states.addState(new int[]{}, capped(fill));
         return states;
+    }
+
+    /**
+     * A key with a lip: the cap, and under it a darker copy showing along the
+     * bottom edge.
+     *
+     * <p>The shadow lives inside the view's own bounds rather than being cast
+     * outside it by elevation. Elevation would be the obvious way and is the wrong
+     * one here — the shadow falls outside the child, so every container the keys
+     * sit in would have to stop clipping, and one that was missed would clip a
+     * shadow off mid-row. Drawn within, it cannot be cropped by anything.
+     */
+    private LayerDrawable capped(int fill) {
+        GradientDrawable lip = new GradientDrawable();
+        lip.setColor(shade(fill, -26));
+        lip.setCornerRadius(dp(8));
+
+        // The face is flat. The volume comes from the lip below it and nothing
+        // else: a gradient across the cap was doing a second job the lip already
+        // does, and two cues for one fact read as a style rather than as a shape.
+        GradientDrawable cap = new GradientDrawable();
+        cap.setColor(fill);
+        cap.setCornerRadius(dp(8));
+
+        LayerDrawable stack = new LayerDrawable(new Drawable[]{lip, cap});
+        // One device pixel, written as 1 rather than dp(1): on a dense panel a dp
+        // is two or three pixels and the lip stops being a lip and starts being a
+        // step. The volume here is meant to be felt rather than seen.
+        stack.setLayerInset(1, 0, 0, 0, 1);
+        return stack;
     }
 
     private GradientDrawable solid(int colour) {

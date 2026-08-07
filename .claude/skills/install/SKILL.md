@@ -133,6 +133,19 @@ one. Uninstall first, losing the saved servers:
 adb uninstall dev.butschster.linuxterminal && adb install linux-terminal.apk
 ```
 
+## Pairing the headset
+
+A freshly installed server lets nobody in until a headset is paired: the card in
+the app offers **pair** rather than **connect**. Open a window on the server and
+type the six digits it shows.
+
+```sh
+linux-terminal-server --pair          # or the console at http://localhost:9104
+```
+
+The **pairing** skill covers the whole procedure, what it protects, and how to
+take access back.
+
 ## Dictation
 
 Optional and off until an endpoint is set. Open `http://localhost:9104` and

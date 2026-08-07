@@ -108,6 +108,28 @@ make run             # in this terminal, no service
 Install it on every machine you want to reach. They all announce themselves the
 same way.
 
+### Ports, chosen once at startup
+
+```sh
+linux-terminal-server --port 9103 --http 9104 --cwd ~/projects
+```
+
+| | |
+|---|---|
+| `--port` | sessions (TCP) and discovery (UDP), both on this one number |
+| `--http` | the web console; `0`, the default, turns it off entirely |
+| `--http-bind` | what the console listens on — `127.0.0.1`, and leave it there |
+| `--cwd` | where shells start |
+| `--tray` | the desktop indicator; on by default where there is a desktop |
+
+The console binds to localhost because it can open a pairing window and revoke a
+headset's access. Reach it from another machine by tunnelling, not by widening
+it:
+
+```sh
+ssh -L 9104:localhost:9104 you@the-machine
+```
+
 ## Install the client
 
 ```sh
@@ -123,6 +145,67 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Needs JDK 21 and Android SDK 34; put `sdk.dir=` in `client/local.properties`.
 Sideloaded apps live under **Unknown Sources** in the Quest's app library.
+
+## Pairing a headset, and what it protects
+
+A machine on your network can be *seen* by anyone on it. It can only be *used*
+by a headset you have deliberately let in.
+
+**The first time**, the headset offers `pair` rather than `connect`. Open a
+window on the server — the console has a button under **Headsets**, or from a
+terminal:
+
+```sh
+linux-terminal-server --pair
+```
+
+Six digits appear, along with a fingerprint. Type the digits into the headset,
+and check that the fingerprint it shows is the same one. That is the whole
+ceremony, and it happens once per headset.
+
+### What is actually going on
+
+Three things are true after pairing, and each closes a different hole.
+
+**The connection is encrypted.** TLS 1.3, always — the server refuses a plain
+socket rather than accepting one quietly. Without this, everything below is
+theatre: a password read off the wire by anyone on the café Wi-Fi protects
+nobody.
+
+**The headset knows which machine it is talking to.** The server signs its own
+certificate, which proves nothing on its own — anyone can make one. What makes
+it an identity is that pairing writes its fingerprint down and every connection
+afterwards checks it. A machine that presents a different certificate is not
+that machine, and the headset refuses it and says so. This is why the
+fingerprint is shown twice and why comparing them is worth the two seconds.
+
+**The server knows which headset is talking to it.** Six digits are traded, once,
+for a 160-bit token that the two ends keep and you never see. The short code is
+enough because it is deliberately fragile: it expires in five minutes, dies after
+five wrong answers, is spent by the first success, and does not exist at all
+until somebody at the machine opened a window. Take any one of those away and six
+digits would not be enough.
+
+Until a headset is paired, the network learns almost nothing: the discovery
+answer is a name, a port and a version. Who is logged in, which Linux it runs and
+where its shells start used to be broadcast to whoever asked, and now they travel
+over the session, after the headset has proved who it is.
+
+### If a headset is lost
+
+Revoke the token in the console. Every paired headset must pair again, which is
+the point: there is no way to invalidate one and not the others, and pretending
+otherwise would be a worse answer than saying so.
+
+The certificate is deliberately *not* rotated by that — changing it would make
+every headset refuse the machine as an impostor, which is right when the machine
+really has changed and wrong when you only meant to replace a token.
+
+### What this does not protect against
+
+Somebody wearing your headset. The token is on the device, and a device someone
+else is holding is a device that can open a shell. That is the same threat model
+as an unlocked laptop and has the same answer.
 
 ## Using it
 
@@ -144,6 +227,8 @@ lets them sit next to a browser or anything else.
 | the on-screen keyboard | the keyboard button |
 | dictation | the microphone button |
 | who is connected, where voice goes | `http://localhost:9104` on the server |
+| pair another headset | `Headsets` in the console, or `--pair` |
+| unpair a machine | `unpair` on its card in the headset |
 
 ## How it is put together
 

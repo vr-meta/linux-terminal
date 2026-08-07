@@ -51,6 +51,10 @@ var (
 	flagQuiet   = flag.Bool("quiet", false, "log sessions only, not every connection detail")
 	flagVersion = flag.Bool("version", false, "print the version and exit")
 
+	// For the machine with no screen. Asks the server that is already running to
+	// open a window, and prints the code where somebody over ssh can read it.
+	flagPair = flag.Bool("pair", false, "open a pairing window and print the code")
+
 	// Dictation. The headset records; this machine transcribes, so the key never
 	// leaves it. Any OpenAI-compatible endpoint works — the official one, or a
 	// Whisper you run yourself.
@@ -68,13 +72,11 @@ var (
 	// implementation on a different library froze this desktop four times; the
 	// one here is the library the sibling project has used all along without
 	// ever doing that.
-	flagTray = flag.Bool("tray", false, "show an icon in the desktop tray")
-
-	// A migration rather than a setting. Removing it is the point; it exists so
-	// that upgrading the server does not silently strand a headset running the
-	// previous client. See docs/security.md.
-	flagAllowPlain = flag.Bool("allow-plain", true,
-		"also accept unencrypted, unauthenticated connections (going away)")
+	// On by default now. It was held back while the desktop was freezing, and the
+	// cause turned out to be a library that is no longer used; the one here has
+	// run without incident since. A server with no window should say it is
+	// running without being asked.
+	flagTray = flag.Bool("tray", true, "show an icon in the desktop tray")
 )
 
 func main() {
@@ -91,6 +93,10 @@ func main() {
 	if *flagDump != "" {
 		dumpContext(*flagDump)
 		return
+	}
+
+	if *flagPair {
+		os.Exit(openPairing(*flagHTTP))
 	}
 
 	cwd := *flagCwd
@@ -117,7 +123,8 @@ func main() {
 	config := loadConfig()
 	server := &Server{
 		Shell: shell, Cwd: cwd, Name: name, Port: *flagPort, HTTPPort: *flagHTTP,
-		Quiet: *flagQuiet, ASR: config.ASR, Identity: config.Identity, Started: time.Now(),
+		Quiet: *flagQuiet, ASR: config.ASR, Identity: config.Identity,
+		Events: newBroker(), Started: time.Now(),
 	}
 
 	if server.ASR.configured() {
@@ -155,9 +162,6 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	log.Printf("fingerprint %s", server.Identity.Fingerprint())
-	if *flagAllowPlain {
-		log.Printf("accepting unencrypted clients as well — see docs/security.md")
-	}
 
 	accept := func() {
 		for {
@@ -197,6 +201,8 @@ type Server struct {
 	Quiet    bool
 	ASR      ASR
 	Identity Identity
+	Pairing  pairing
+	Events   *broker
 	Started  time.Time
 
 	mu       sync.Mutex
@@ -210,6 +216,7 @@ func (s *Server) track(session *Session) {
 	s.nextID++
 	session.ID = s.nextID
 	s.sessions = append(s.sessions, session)
+	go s.announce("sessions")
 }
 
 func (s *Server) untrack(session *Session) {
@@ -218,6 +225,7 @@ func (s *Server) untrack(session *Session) {
 	for i, known := range s.sessions {
 		if known == session {
 			s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
+			go s.announce("sessions")
 			return
 		}
 	}

@@ -30,6 +30,8 @@ const (
 	msgContext = 0x82 // server -> client: context JSON
 	msgExit    = 0x83 // server -> client: {"code":N}
 	msgSpeech  = 0x84 // server -> client: {"text":...} or {"error":...}
+	msgInfo    = 0x85 // server -> client: who and what this machine is, once authenticated
+	msgPaired  = 0x86 // server -> client: {"token":"..."} — the long secret, once
 )
 
 // How often the foreground process is re-read. Cheap — two /proc reads — and the
@@ -73,6 +75,15 @@ func (s *Server) serveSession(conn net.Conn) {
 		log.Printf("cannot start a shell: %v", err)
 		return
 	}
+
+	// Who and what this machine is — sent here rather than in the discovery
+	// answer, because that one is broadcast to anyone who asks and this is not.
+	session.sendJSON(msgInfo, map[string]any{
+		"user":  currentUser(),
+		"os":    osRelease(),
+		"cwd":   short(s.Cwd),
+		"voice": s.ASR.configured(),
+	})
 	session.run()
 }
 

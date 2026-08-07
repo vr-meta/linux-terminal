@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,11 +19,10 @@ import (
 // the second is meaningless without the first — a token sent over a plain socket
 // is read by anyone listening, which changes who feels safe rather than who is.
 //
-// One port carries both, and which one a connection is decided by its first
-// byte. A TLS record always begins 0x16 (handshake), and the client's first
-// frame in the plain protocol is a message kind of 0x01–0x05, so the two cannot
-// be confused. That is what lets the server be upgraded before every headset is,
-// instead of going dark for whoever has not updated yet.
+// The first byte still decides whether this is TLS — a record always opens 0x16
+// — but only so that a client speaking the old plain protocol gets a clear line
+// in the log rather than a handshake error nobody can read. Nothing is served
+// over it.
 
 // tlsRecordHandshake is the first byte of every TLS connection there has ever
 // been: ContentType 22, handshake.
@@ -44,17 +44,8 @@ func (s *Server) greet(conn net.Conn, settings *tls.Config) {
 	}
 
 	if first[0] != tlsRecordHandshake {
-		if !*flagAllowPlain {
-			log.Printf("refused an unencrypted connection from %s", conn.RemoteAddr())
-			_ = conn.Close()
-			return
-		}
-		// Kept for one version so a headset running the previous client does not
-		// simply stop working with nothing to explain why. It is a migration, not
-		// a setting, and it says so every single time.
-		log.Printf("UNENCRYPTED session from %s — this client is out of date, and "+
-			"--allow-plain will be removed", conn.RemoteAddr())
-		s.serveSession(&peeked{Conn: conn, reader: peeker})
+		log.Printf("refused an unencrypted connection from %s", conn.RemoteAddr())
+		_ = conn.Close()
 		return
 	}
 
@@ -68,6 +59,20 @@ func (s *Server) greet(conn net.Conn, settings *tls.Config) {
 	}
 
 	switch s.authorised(secured) {
+	case authPaired:
+		// The six digits were right. Hand over the long token and close: the client
+		// stores it and comes back with it, so the code is never what a session
+		// runs on.
+		s.sendFrame(secured, msgPaired, fmt.Sprintf("{%q:%q}", "token", s.Identity.Token))
+		log.Printf("paired with %s", conn.RemoteAddr())
+		// Said as an event rather than left for the console to notice: "a headset
+		// just paired" is the thing a person is waiting to be told, and a state
+		// that quietly stops showing a code does not tell them.
+		s.Events.publish("paired", map[string]any{"remote": conn.RemoteAddr().String()})
+		s.announce("pairing")
+		time.Sleep(200 * time.Millisecond)
+		_ = secured.Close()
+		return
 	case authPeeked:
 		// Handshake completed, nothing sent, gone. That is a client reading the
 		// certificate so a person can compare its fingerprint before pairing —
@@ -94,6 +99,7 @@ const (
 	authRefused authResult = iota
 	authAccepted
 	authPeeked
+	authPaired
 )
 
 // authorised reads the first frame and expects it to be the token.
@@ -119,14 +125,33 @@ func (s *Server) authorised(conn net.Conn) authResult {
 
 	var offered struct {
 		Token string `json:"token"`
+		Pair  string `json:"pair"`
 	}
 	if json.Unmarshal(payload, &offered) != nil {
+		return authRefused
+	}
+	if offered.Pair != "" {
+		if s.Pairing.accepts(offered.Pair) {
+			return authPaired
+		}
 		return authRefused
 	}
 	if s.Identity.tokenMatches(offered.Token) {
 		return authAccepted
 	}
 	return authRefused
+}
+
+// sendFrame writes one frame outside a session, which pairing needs because it
+// answers and hangs up without ever allocating a pty.
+func (s *Server) sendFrame(conn net.Conn, kind byte, payload string) {
+	header := make([]byte, 5)
+	header[0] = kind
+	binary.BigEndian.PutUint32(header[1:], uint32(len(payload)))
+	if _, err := conn.Write(header); err != nil {
+		return
+	}
+	_, _ = conn.Write([]byte(payload))
 }
 
 // peeked hands back the bytes that were read to work out what this connection

@@ -84,6 +84,9 @@ public class Server {
                 JSONObject entry = array.getJSONObject(i);
                 Server server = new Server(entry.optString("name"), entry.optString("host"),
                         entry.optInt("port", 9103));
+                server.user = entry.optString("user", "");
+                server.os = entry.optString("os", "");
+                server.cwd = entry.optString("cwd", "");
                 server.token = entry.optString("token", "");
                 server.fingerprint = entry.optString("fingerprint", "");
                 servers.add(server);
@@ -101,6 +104,9 @@ public class Server {
                 entry.put("name", server.name);
                 entry.put("host", server.host);
                 entry.put("port", server.port);
+                entry.put("user", server.user);
+                entry.put("os", server.os);
+                entry.put("cwd", server.cwd);
                 entry.put("token", server.token);
                 entry.put("fingerprint", server.fingerprint);
                 array.put(entry);
@@ -119,6 +125,9 @@ public class Server {
                 // Only ever filled in, never blanked: a rediscovery of a machine
                 // carries no token, and letting that overwrite what pairing agreed
                 // would silently unpair every server the moment it was seen again.
+                if (!server.user.isEmpty()) known.user = server.user;
+                if (!server.os.isEmpty()) known.os = server.os;
+                if (!server.cwd.isEmpty()) known.cwd = server.cwd;
                 if (!server.token.isEmpty()) known.token = server.token;
                 if (!server.fingerprint.isEmpty()) known.fingerprint = server.fingerprint;
                 save(context, servers);

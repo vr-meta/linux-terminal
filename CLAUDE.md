@@ -70,6 +70,14 @@ had those keys in an ordinary group at the end of a list whose earlier groups
 changed length, so starting a program moved Enter and `^C` to another row. That
 is the Touch Bar's failure, committed against the keys that matter most.
 
+**Nobody gets a shell without being let in.** TLS 1.3 always, the client pins the
+server's self-signed certificate at pairing, and a 160-bit token is checked in
+constant time. Six digits are traded for that token once and are safe only
+because they are fragile on purpose — five minutes, five wrong answers, single
+use, and non-existent until a window is opened at the machine. `docs/security.md`
+argues the design and what was ruled out; the **pairing** skill covers using it.
+Anything added to the discovery answer is given to strangers, so ask first.
+
 **Keys and audio stay on the server side of the trust boundary.** The
 transcription key lives in `~/.config/linux-terminal/config.json` (0600) and is
 never sent to the headset, never logged, and never accepted as a command-line

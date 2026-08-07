@@ -107,9 +107,9 @@ public class Discovery {
                     json.optString("name", packet.getAddress().getHostAddress()),
                     packet.getAddress().getHostAddress(),
                     json.optInt("port", PORT));
-            server.user = json.optString("user", "");
-            server.os = json.optString("os", "");
-            server.cwd = json.optString("cwd", "");
+            // Who, what and where no longer travel in a broadcast answer: the
+            // server stopped telling strangers. They are filled in from what was
+            // learned over a session, by whoever has the saved list to hand.
             server.discovered = true;
             return server;
         } catch (Exception e) {

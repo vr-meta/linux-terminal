@@ -23,17 +23,21 @@ const (
 
 // Announcement is what a server says about itself. Deliberately small: this is a
 // datagram, and everything here has to fit in one.
+// What a stranger is told, and nothing more.
+//
+// This answers an unauthenticated broadcast from anyone on the network, so it
+// carries only what a headset needs in order to draw a card and decide whether
+// to pair: which protocol, which machine, which port. It used to include the
+// login name, the operating system and the working directory — a description of
+// a machine and its user, handed to whoever asked first.
+//
+// Everything else now arrives after the client has proved who it is, over the
+// session, where it belongs.
 type Announcement struct {
 	Proto   string `json:"proto"`
 	Version int    `json:"version"`
 	Name    string `json:"name"`
 	Port    int    `json:"port"`
-	User    string `json:"user"`
-	OS      string `json:"os"`
-	Cwd     string `json:"cwd"`
-	// Whether dictation will work. The headset says so on the button rather than
-	// letting you speak for a minute and then reporting there was nowhere to send it.
-	Voice   bool   `json:"voice"`
 	Release string `json:"release"`
 }
 
@@ -48,9 +52,7 @@ func (s *Server) serveDiscovery(bind string) {
 	defer conn.Close()
 
 	reply, err := json.Marshal(Announcement{
-		Proto: discoveryTag, Version: 1, Name: s.Name, Port: s.Port,
-		User: currentUser(), OS: osRelease(), Cwd: short(s.Cwd),
-		Voice: s.ASR.configured(), Release: version,
+		Proto: discoveryTag, Version: 2, Name: s.Name, Port: s.Port, Release: version,
 	})
 	if err != nil {
 		return

@@ -1,0 +1,82 @@
+# Every pull request, and main itself.
+#
+# Both halves, for the same reason the release workflow builds both: a server
+# that compiles and an app that does not is a release that fails at the tag,
+# which is the worst moment to find out.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A force-push to a branch under review should not leave the previous run
+# burning minutes on a commit nobody will look at again. main is exempt: its
+# history is what releases are cut from.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # From go.mod rather than a number written here, which drifts: the release
+      # workflow pins "1.24" while the module asks for newer, and only Go's
+      # automatic toolchain download hides it.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Formatting
+        working-directory: server
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt would change these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        working-directory: server
+        run: go vet ./...
+
+      # -race because the tool files are read by every session's poll loop while
+      # a reload replaces them: the lock around that is exactly the kind of thing
+      # that works on one machine and not on another.
+      - name: Test
+        working-directory: server
+        run: go test -race ./...
+
+      # The tool tables are data now, so "does it compile" no longer covers them.
+      # This is the same check the tests make, run against the binary that would
+      # actually ship.
+      - name: The tool files load
+        working-directory: server
+        run: |
+          go run . --tools
+          test "$(go run . --tools 2>&1 >/dev/null | wc -l)" = "0" \
+            || { echo "::error::the loader complained — see the output above"; exit 1; }
+
+  client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      # No local.properties and no signing secrets: the runner's ANDROID_HOME is
+      # where Gradle looks, and a debug build needs no key. Whether the release
+      # key is present is the release workflow's problem, not this one's.
+      - name: Build
+        working-directory: client
+        run: ./gradlew :app:assembleDebug --no-daemon

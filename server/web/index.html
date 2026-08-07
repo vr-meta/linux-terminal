@@ -181,6 +181,31 @@
     border-radius: 5px; padding: 1px 5px;
   }
 
+  .pair-code {
+    font-family: var(--font-mono);
+    font-size: 44px;
+    letter-spacing: 0.22em;
+    color: var(--text);
+    padding: 10px 0 4px;
+  }
+  .pair-print {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-tertiary);
+    word-break: break-all;
+    padding-bottom: 14px;
+  }
+  .pair-outcome {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-soft-strong);
+    color: var(--text);
+    font-size: 13.5px;
+  }
+  .hidden { display: none; }
+
   /* ---------- section headings ---------- */
 
   h2 {
@@ -434,6 +459,40 @@
       <div id="sessions"></div>
     </section>
 
+    <section aria-labelledby="pairing-heading">
+      <h2 id="pairing-heading">Headsets</h2>
+      <div class="card">
+        <!-- Opening the window is a deliberate act at the machine, and that is
+             what makes six digits enough: there is nothing to guess at unless
+             somebody standing here decided there should be. -->
+        <div id="pair-idle">
+          <p class="field-note">
+            A headset proves it is allowed in once, with a six-digit code. After that
+            the two ends share a long secret you never have to see or type.
+          </p>
+          <button id="pair-start" class="primary">Pair a headset</button>
+        </div>
+
+        <div id="pair-live" class="hidden">
+          <p class="field-note">Type this into the headset:</p>
+          <div id="pair-code" class="pair-code">000000</div>
+          <p class="field-note">
+            Expires in <span id="pair-left">—</span>. It works once, and five wrong
+            answers end it.
+          </p>
+          <p class="field-note">
+            The headset shows a fingerprint. It should read:
+          </p>
+          <div id="pair-print" class="pair-print">—</div>
+          <button id="pair-stop">Stop</button>
+        </div>
+
+        <div id="pair-outcome" class="pair-outcome hidden" role="status">
+          A headset paired.
+        </div>
+      </div>
+    </section>
+
     <section aria-labelledby="dictation-heading">
       <h2 id="dictation-heading">Dictation</h2>
 
@@ -588,6 +647,9 @@ function stat(label, value) {
 
 // ---- main poll loop ----
 
+// Fetching and drawing are separate so that a state arriving over the event
+// stream is painted by exactly the same code as one that was asked for. Two
+// paths that draw the same page eventually draw it differently.
 async function refresh() {
   let state;
   try {
@@ -601,6 +663,15 @@ async function refresh() {
     if (loaded) $("main").classList.add("is-stale");
     return;
   }
+  paint(state);
+}
+
+function paint(state) {
+  // Every state painted here, pairing included. It was left out once and the
+  // symptom was a code sitting on screen after the server had already burned it:
+  // the panel only ever changed when a button was pressed, so nothing that
+  // happened elsewhere could reach it.
+  showPairing(state.pairing);
 
   $("conn-dot").className = "conn-dot live";
   $("conn-text").textContent = "live";
@@ -785,8 +856,89 @@ $("save").onclick = async () => {
 };
 
 setMode("openai", { markDirty: false });
+// ---------------------------------------------------------------- pairing
+
+$("pair-start").onclick = async () => {
+  const answer = await (await fetch("/api/pairing", { method: "POST" })).json();
+  showPairing(answer);
+};
+
+$("pair-stop").onclick = async () => {
+  const answer = await (await fetch("/api/pairing?stop=1", { method: "POST" })).json();
+  showPairing(answer);
+};
+
+function showPairing(pairing) {
+  const live = pairing && pairing.code;
+  $("pair-idle").classList.toggle("hidden", !!live);
+  $("pair-live").classList.toggle("hidden", !live);
+  if (!live) return;
+  $("pair-code").textContent = pairing.code;
+  $("pair-print").textContent = pairing.fingerprint;
+  const seconds = pairing.seconds || 0;
+  $("pair-left").textContent = seconds >= 60
+    ? Math.ceil(seconds / 60) + " min"
+    : seconds + " s";
+}
+
+// ------------------------------------------------------------------ events
+//
+// The server says when something happened rather than being asked twice a
+// second whether it has. Polling can show a state but cannot report a moment,
+// and "that headset just paired" is a moment — which is why a code used to sit
+// on screen for two seconds after it had already stopped working.
+//
+// Polling stays as the fallback and nothing more: if the stream cannot be
+// opened, or drops and will not come back, the page keeps working the way it
+// always did rather than going quiet.
+
+let poller = null;
+
+function startPolling() {
+  if (poller) return;
+  poller = setInterval(refresh, 2000);
+}
+
+function stopPolling() {
+  if (!poller) return;
+  clearInterval(poller);
+  poller = null;
+}
+
+function apply(state) {
+  if (!state) return;
+  paint(state);
+}
+
+function listen() {
+  if (!window.EventSource) { startPolling(); return; }
+
+  const stream = new EventSource("/api/events");
+
+  stream.addEventListener("state", e => { stopPolling(); apply(JSON.parse(e.data)); });
+  stream.addEventListener("sessions", e => apply(JSON.parse(e.data)));
+  stream.addEventListener("pairing", e => apply(JSON.parse(e.data)));
+
+  stream.addEventListener("paired", () => {
+    // Said out loud, because the alternative is a code quietly disappearing and
+    // leaving the person wondering whether it worked or timed out.
+    const note = $("pair-outcome");
+    if (note) {
+      note.textContent = "A headset paired. It can open a shell now.";
+      note.classList.remove("hidden");
+      setTimeout(() => note.classList.add("hidden"), 8000);
+    }
+  });
+
+  stream.onerror = () => {
+    // EventSource reconnects on its own; polling covers the gap and is turned
+    // off again by the next state event that arrives.
+    startPolling();
+  };
+}
+
 refresh();
-setInterval(refresh, 2000);
+listen();
 </script>
 </body>
 </html>

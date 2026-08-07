@@ -43,6 +43,8 @@ func (s *Server) serveHTTP(address string) {
 	mux.HandleFunc("/api/close", s.handleClose)
 	mux.HandleFunc("/api/asr", s.handleASR)
 	mux.HandleFunc("/api/pairing", s.handlePairing)
+	mux.HandleFunc("/api/revoke", s.handleRevoke)
+	mux.HandleFunc("/api/events", s.handleEvents)
 
 	if !strings.HasPrefix(address, "127.0.0.1:") && !strings.HasPrefix(address, "localhost:") {
 		log.Printf("WARNING: the web console on %s has no authentication and can "+
@@ -66,6 +68,13 @@ type sessionView struct {
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.snapshot())
+}
+
+// snapshot is everything the console shows, in one value. One function so the
+// polled endpoint and the event stream can never drift into describing the
+// machine differently.
+func (s *Server) snapshot() map[string]any {
 	var sessions []sessionView
 	for _, session := range s.liveSessions() {
 		tool := session.lastTool
@@ -87,7 +96,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, map[string]any{
+	return map[string]any{
 		"name":     s.Name,
 		"version":  version,
 		"port":     s.Port,
@@ -97,15 +106,9 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		"os":       osRelease(),
 		"uptime":   int(time.Since(s.Started).Seconds()),
 		"sessions": sessions,
-		// The token in full, because this console is bound to localhost and a
-		// pairing secret you cannot read is a pairing secret you cannot use. The
-		// fingerprint beside it is what makes pairing a comparison rather than an
-		// act of faith — the headset shows the same string.
-		"pairing": map[string]any{
-			"token":       s.Identity.Token,
-			"fingerprint": s.Identity.Fingerprint(),
-			"plain":       *flagAllowPlain,
-		},
+		// The code if a window is open, and the fingerprint to compare — never the
+		// long token, which is for machines and would only invite being typed.
+		"pairing": pairingState(s),
 		"asr": map[string]any{
 			"configured": s.ASR.configured(),
 			"url":        s.ASR.URL,
@@ -114,7 +117,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 			// Never the key itself — only whether there is one.
 			"key_set": s.ASR.Key != "",
 		},
-	})
+	}
 }
 
 func (s *Server) handleClose(w http.ResponseWriter, r *http.Request) {
@@ -171,25 +174,61 @@ func (s *Server) handleASR(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"saved": true})
 }
 
-// handlePairing issues a new token, which is how a headset that was lost or lent
-// out stops being able to open a shell.
+// pairingState is what the console needs to talk a person through pairing: the
+// code if one is live, how long it has, and the fingerprint to compare. Never
+// the long token — that one is for machines, and printing it invites somebody to
+// type it.
+func pairingState(s *Server) map[string]any {
+	code, seconds := s.Pairing.state()
+	return map[string]any{
+		"code":        code,
+		"seconds":     seconds,
+		"fingerprint": s.Identity.Fingerprint(),
+	}
+}
+
+// handlePairing starts a pairing window, or ends one.
 //
-// The certificate is deliberately left alone: rotating it would make every
-// paired headset refuse the machine, which is the correct response to a changed
-// identity and the wrong outcome for a token you meant to replace.
+// Starting is deliberately an act somebody performs at the machine: it is what
+// makes six digits enough, because guessing them requires the window to be open
+// and it is only open when a person opened it.
 func (s *Server) handlePairing(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
 
+	if r.URL.Query().Get("stop") != "" {
+		s.Pairing.stop()
+		s.announce("pairing")
+		writeJSON(w, pairingState(s))
+		return
+	}
+
+	code := s.Pairing.begin()
+	log.Printf("pairing open for %s — code %s", pairWindow, code)
+	s.announce("pairing")
+	writeJSON(w, pairingState(s))
+}
+
+// handleRevoke replaces the long token, which is how a headset that was lost or
+// lent out stops being able to open a shell.
+//
+// The certificate is deliberately left alone: rotating it would make every
+// paired headset refuse the machine, which is the right response to a changed
+// identity and the wrong outcome for a token you meant to replace.
+func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
 	s.Identity.Token = newToken()
 	if err := saveConfig(Config{ASR: s.ASR, Identity: s.Identity}); err != nil {
 		writeJSON(w, map[string]any{"saved": false, "error": err.Error()})
 		return
 	}
-	log.Printf("pairing token replaced — every paired headset must be paired again")
-	writeJSON(w, map[string]any{"saved": true, "token": s.Identity.Token})
+	log.Printf("token replaced — every paired headset must pair again")
+	writeJSON(w, map[string]any{"saved": true})
 }
 
 // saveConfig writes the settings file with the key in it, so it is 0600 and the

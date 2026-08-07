@@ -64,16 +64,11 @@ var (
 	flagHTTP     = flag.Int("http", 0, "serve the web console on this port (0 disables it)")
 	flagHTTPBind = flag.String("http-bind", "127.0.0.1", "address the web console listens on")
 
-	// Off by default. The menu-based version of this froze the desktop four
-	// times; what is here now has no menu at all, copied from a tray app on the
-	// same desktop that has never done it. That is a good reason to believe it
-	// and not a reason to make it the default yet.
-	flagTray = flag.Bool("tray", false, "show an icon in the desktop tray (experimental)")
-
-	// Exports the tray item without telling the watcher about it, so its D-Bus
-	// surface can be inspected on the machine it would otherwise freeze.
-	// Registering is the dangerous half; this is the other one.
-	flagTraySelftest = flag.Bool("tray-selftest", false, "export the tray item but do not register it")
+	// Off by default until it has run for a while without incident. An earlier
+	// implementation on a different library froze this desktop four times; the
+	// one here is the library the sibling project has used all along without
+	// ever doing that.
+	flagTray = flag.Bool("tray", false, "show an icon in the desktop tray")
 )
 
 func main() {
@@ -151,15 +146,15 @@ func main() {
 		}
 	}
 
-	if *flagTray || *flagTraySelftest {
-		switch {
-		case !trayAvailable():
-			log.Printf("no desktop session here — running without a tray icon")
-		default:
-			if err := server.runTray(!*flagTraySelftest); err != nil {
-				log.Printf("no tray icon: %v", err)
-			}
-		}
+	// systray owns the goroutine it is given and never returns it, so the tray
+	// takes the main one and accepting moves aside.
+	if *flagTray && trayAvailable() {
+		go accept()
+		server.runTray()
+		return
+	}
+	if *flagTray {
+		log.Printf("no desktop session here — running without a tray icon")
 	}
 	accept()
 }

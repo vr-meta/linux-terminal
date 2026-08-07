@@ -131,10 +131,12 @@ ps -o pid,pcpu,etime,stat -C gnome-shell
 journalctl --user -n 50 --no-pager
 ```
 
-**`--tray` is the first suspect and has form**: three freezes in fifteen
-minutes, each one as the icon appeared. It is off by default. If a freeze
-happens without it, check `ps` for a stray server — and remember the server logs
-to a file, so grepping the journal for it proves nothing either way.
+**The tray froze this desktop four times, and the library was why.**
+`slytomcat/systray` did it; `fyne.io/systray` — what linux-vr has always used,
+menu and all — does not. If a freeze happens while `--tray` is on, check which
+library the binary was built against before blaming anything else, and remember
+the server logs to a file, so grepping the journal for it proves nothing either
+way.
 
 A freeze during `install.sh` leaves zero-byte files behind. Check for them
 before reinstalling, or you will run an empty binary and debug the silence:

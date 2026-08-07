@@ -1,222 +1,263 @@
 package main
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
-	"github.com/godbus/dbus/v5"
-	"github.com/godbus/dbus/v5/introspect"
-	"github.com/godbus/dbus/v5/prop"
+	"fyne.io/systray"
 )
 
 // An indicator in the desktop's tray, for when the server runs on a machine you
 // are sitting at. The server is otherwise invisible — a user service with no
 // window — and "is it running, and is anyone connected" should not need a
-// terminal to answer.
+// terminal to answer. The icon answers the first by existing, the menu answers
+// the rest.
 //
-// This is a StatusNotifierItem spoken directly over D-Bus, and the shape is
-// copied deliberately from a tray app on this same desktop that has run for
-// months without incident. The shape is the whole point:
+// This has been written three times and the history is worth keeping, because
+// two of the three conclusions were wrong.
 //
-//	ONE object, /StatusNotifierItem. NO com.canonical.dbusmenu anywhere.
+// The first version used slytomcat/systray and froze the desktop four times,
+// hard enough to need a reset each time. The second blamed the menu — GNOME
+// re-reads a dbusmenu whenever it changes — and threw it away, publishing a
+// bare item with no menu at all over raw godbus. That was wrong: the sibling
+// project linux-vr has a tray on this same desktop, with a nine-item menu it
+// repaints on a one-second tick, and it has never frozen anything.
 //
-// The first version used a wrapper library that exported a ten-item menu and
-// emitted LayoutUpdated whenever any of it changed. GNOME answers that signal by
-// re-reading the entire menu, on the one thread its JavaScript runs on, and the
-// desktop froze hard enough to need a reset — four times, including once with
-// the refresh rate fixed, so the rate was never the problem. The working
-// neighbour has no menu at all: Menu points at a path that does not exist and
-// ItemIsMenu is true, which leaves the host nothing to walk.
+// The difference was the library, not the menu. So this is the third version:
+// fyne.io/systray, the one that demonstrably works here, with the two habits
+// that sibling proved out —
 //
-// So there is no menu here, and there is nothing a menu was doing that is now
-// missing. A click opens the console, which already lists the sessions and owns
-// the settings. State the icon can carry on its own goes in the tooltip.
+//	items are allocated ONCE and hidden when unused, never rebuilt, and
+//	nothing is repainted unless the state would actually read differently.
 //
-// CGO stays off: godbus is pure Go, which is why the binary is still one file.
+// A menu rebuilt per change grows without bound, since systray cannot remove an
+// item; a menu repainted per tick is the flood that started all this.
+//
+// fyne.io/systray is pure Go on Linux — cgo only on macOS, which this never
+// builds for — so the static binary and the arm64 cross-build survive.
 
-const (
-	trayPath    = dbus.ObjectPath("/StatusNotifierItem")
-	trayIface   = "org.kde.StatusNotifierItem"
-	watcherName = "org.kde.StatusNotifierWatcher"
-	watcherPath = dbus.ObjectPath("/StatusNotifierWatcher")
+//go:embed web/tray.png
+var trayIcon []byte
 
-	// A themed name rather than pixmap bytes we would have to decode and hand
-	// over. Every icon theme ships this one, and a wrong pixmap is a class of
-	// bug this file is in no position to afford.
-	trayIconName = "utilities-terminal"
-)
+// Where this came from. In the menu because a machine running a server someone
+// installed six months ago should be able to say where to read about it.
+const repoURL = "https://github.com/vr-meta/linux-terminal"
 
-// trayTooltip is the SNI ToolTip type, (sa(iiay)ss): an icon name, pixmaps we
-// do not supply, a title and a body.
-type trayTooltip struct {
-	IconName    string
-	Pixmaps     []trayPixmap
-	Title       string
-	Description string
+// How many connections the menu lists. Past a handful of lines a menu stops
+// being glanceable, and the console is one click away.
+const trayMaxSessions = 6
+
+// trayState is everything the icon and menu show. Comparing two of these is how
+// the tray stays silent while nothing is happening.
+type trayState struct {
+	Address  string
+	Sessions []string
 }
 
-type trayPixmap struct {
-	Width  int32
-	Height int32
-	Data   []byte
-}
-
-// trayItem answers the clicks. Every one of them opens the console, because
-// every one of them used to open a menu whose only useful entry did that.
-type trayItem struct {
-	server *Server
-}
-
-func (t *trayItem) Activate(x, y int32) *dbus.Error {
-	t.server.openConsole()
-	return nil
-}
-
-func (t *trayItem) SecondaryActivate(x, y int32) *dbus.Error {
-	t.server.openConsole()
-	return nil
-}
-
-func (t *trayItem) ContextMenu(x, y int32) *dbus.Error {
-	t.server.openConsole()
-	return nil
-}
-
-func (t *trayItem) Scroll(delta int32, orientation string) *dbus.Error {
-	return nil
+func (s *Server) trayStatus() trayState {
+	sessions := s.liveSessions()
+	state := trayState{Address: fmt.Sprintf("%s:%d", localAddress(), s.Port)}
+	for _, session := range sessions {
+		state.Sessions = append(state.Sessions, describe(session))
+	}
+	return state
 }
 
 // trayAvailable reports whether there is a desktop to put an icon on. Without
-// this the item waits for a bus that will never answer.
+// this the library waits for a bus that will never answer.
 func trayAvailable() bool {
 	return os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "" &&
 		(os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("DISPLAY") != "")
 }
 
-// runTray exports the item and, unless this is a self-test, tells the watcher it
-// exists. It returns after that: unlike the library it replaces, nothing here
-// needs to own a goroutine forever.
-func (s *Server) runTray(register bool) error {
-	conn, err := dbus.ConnectSessionBus()
-	if err != nil {
-		return fmt.Errorf("session bus: %w", err)
-	}
-
-	item := &trayItem{server: s}
-	if err := conn.Export(item, trayPath, trayIface); err != nil {
-		return fmt.Errorf("export item: %w", err)
-	}
-
-	tooltip := trayTooltip{
-		IconName:    trayIconName,
-		Title:       "linux-terminal",
-		Description: "nobody connected",
-	}
-
-	// Menu names a path that is never exported, and ItemIsMenu says the click is
-	// ours to handle. This is exactly what the neighbour that never froze does.
-	table := map[string]map[string]*prop.Prop{
-		trayIface: {
-			"Category":   {Value: "ApplicationStatus", Emit: prop.EmitFalse},
-			"Id":         {Value: "linux-terminal", Emit: prop.EmitFalse},
-			"Title":      {Value: "linux-terminal", Emit: prop.EmitFalse},
-			"Status":     {Value: "Active", Emit: prop.EmitFalse},
-			"IconName":   {Value: trayIconName, Emit: prop.EmitFalse},
-			"ToolTip":    {Value: tooltip, Emit: prop.EmitFalse},
-			"ItemIsMenu": {Value: true, Emit: prop.EmitFalse},
-			"Menu":       {Value: dbus.ObjectPath("/StatusNotifierItem/menu"), Emit: prop.EmitFalse},
-		},
-	}
-	properties, err := prop.Export(conn, trayPath, table)
-	if err != nil {
-		return fmt.Errorf("export properties: %w", err)
-	}
-
-	node := &introspect.Node{
-		Name: string(trayPath),
-		Interfaces: []introspect.Interface{
-			introspect.IntrospectData,
-			prop.IntrospectData,
-			{
-				Name:       trayIface,
-				Methods:    introspect.Methods(item),
-				Properties: properties.Introspection(trayIface),
-			},
-		},
-	}
-	if err := conn.Export(introspect.NewIntrospectable(node), trayPath, "org.freedesktop.DBus.Introspectable"); err != nil {
-		return fmt.Errorf("export introspection: %w", err)
-	}
-
-	// The name the watcher is given. The suffix is the convention every host
-	// expects; the pid keeps two servers on one desktop from colliding.
-	name := fmt.Sprintf("org.kde.StatusNotifierItem-%d-1", os.Getpid())
-	reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
-	if err != nil {
-		return fmt.Errorf("request name: %w", err)
-	}
-	if reply != dbus.RequestNameReplyPrimaryOwner {
-		return fmt.Errorf("name %s is taken", name)
-	}
-
-	if !register {
-		log.Printf("tray self-test: %s exported, NOT registered with the watcher", name)
-		log.Printf("inspect it with: busctl --user introspect %s %s", name, trayPath)
-		go s.trayWatch(conn, properties)
-		return nil
-	}
-
-	watcher := conn.Object(watcherName, watcherPath)
-	if call := watcher.Call(watcherName+".RegisterStatusNotifierItem", 0, name); call.Err != nil {
-		return fmt.Errorf("no tray host: %w", call.Err)
-	}
-
-	log.Printf("tray icon registered as %s", name)
-	go s.trayWatch(conn, properties)
-	return nil
+// runTray blocks — systray owns the goroutine it is given.
+func (s *Server) runTray() {
+	systray.Run(s.trayReady, func() {})
 }
 
-// trayWatch keeps the tooltip honest. It emits only when the sentence would
-// read differently — a few times an hour — and it emits NewToolTip, which asks
-// the host to re-read one property, not to walk anything.
-func (s *Server) trayWatch(conn *dbus.Conn, properties *prop.Properties) {
-	previous := ""
-	for {
-		description := trayDescription(len(s.liveSessions()))
-		if description != previous {
-			previous = description
-			properties.SetMust(trayIface, "ToolTip", trayTooltip{
-				IconName:    trayIconName,
-				Title:       "linux-terminal",
-				Description: description,
-			})
-			if err := conn.Emit(trayPath, trayIface+".NewToolTip"); err != nil {
-				log.Printf("tray: %v", err)
+func (s *Server) trayReady() {
+	state := s.trayStatus()
+
+	systray.SetIcon(trayIcon)
+	systray.SetTitle("")
+	systray.SetTooltip(trayTooltip(state))
+
+	console := systray.AddMenuItem("Console and settings…", "sessions and dictation, in a browser")
+	if s.HTTPPort == 0 {
+		console.SetTitle("Console is off (--http)")
+		console.Disable()
+	}
+
+	systray.AddSeparator()
+
+	// The lines that report rather than offer. Allocated once and hidden when
+	// unused: systray cannot remove an item, so a menu rebuilt on every change
+	// grows without bound.
+	heading := systray.AddMenuItem("", "")
+	heading.Disable()
+	lines := make([]*systray.MenuItem, trayMaxSessions)
+	for i := range lines {
+		lines[i] = systray.AddMenuItem("", "")
+		lines[i].Disable()
+		lines[i].Hide()
+	}
+	more := systray.AddMenuItem("", "")
+	more.Disable()
+	more.Hide()
+
+	systray.AddSeparator()
+	copyAddress := systray.AddMenuItem("Copy the address",
+		"put it in the clipboard for typing into a headset")
+	project := systray.AddMenuItem("linux-terminal "+version+" on GitHub", repoURL)
+
+	systray.AddSeparator()
+	quit := systray.AddMenuItem("Stop the server", "closes every session")
+
+	go func() {
+		for {
+			select {
+			case <-console.ClickedCh:
+				trayOpen(fmt.Sprintf("http://127.0.0.1:%d", s.HTTPPort))
+			case <-copyAddress.ClickedCh:
+				trayClipboard(s.trayStatus().Address)
+			case <-project.ClickedCh:
+				trayOpen(repoURL)
+			case <-quit.ClickedCh:
+				log.Printf("stopped from the tray")
+				systray.Quit()
+				os.Exit(0)
 			}
 		}
-		time.Sleep(2 * time.Second)
+	}()
+
+	go s.trayFollow(state, heading, lines, more)
+}
+
+// trayFollow repaints when the state changes and does nothing when it does not.
+//
+// A second is the right period: this is a status light, not an instrument, and
+// nothing it reports changes faster than a headset connecting.
+func (s *Server) trayFollow(previous trayState, heading *systray.MenuItem,
+	lines []*systray.MenuItem, more *systray.MenuItem) {
+
+	trayPaint(previous, heading, lines, more)
+	for range time.Tick(time.Second) {
+		current := s.trayStatus()
+		if traySame(previous, current) {
+			continue
+		}
+		systray.SetTooltip(trayTooltip(current))
+		trayPaint(current, heading, lines, more)
+		previous = current
 	}
 }
 
-func trayDescription(sessions int) string {
-	switch sessions {
+func trayPaint(state trayState, heading *systray.MenuItem,
+	lines []*systray.MenuItem, more *systray.MenuItem) {
+
+	switch len(state.Sessions) {
 	case 0:
-		return "nobody connected"
+		heading.SetTitle(state.Address + "   ·   nobody connected")
 	case 1:
-		return "1 connection"
+		heading.SetTitle(state.Address + "   ·   1 connection")
 	default:
-		return fmt.Sprintf("%d connections", sessions)
+		heading.SetTitle(fmt.Sprintf("%s   ·   %d connections", state.Address, len(state.Sessions)))
+	}
+
+	for i, line := range lines {
+		if i >= len(state.Sessions) {
+			line.Hide()
+			continue
+		}
+		line.SetTitle("   " + state.Sessions[i])
+		line.Show()
+	}
+
+	if extra := len(state.Sessions) - len(lines); extra > 0 {
+		more.SetTitle(fmt.Sprintf("   and %d more — see the console", extra))
+		more.Show()
+	} else {
+		more.Hide()
 	}
 }
 
-// openConsole hands the URL to the desktop rather than choosing a browser. On a
-// machine with a tray there is always something behind xdg-open.
-func (s *Server) openConsole() {
-	url := fmt.Sprintf("http://127.0.0.1:%d", s.HTTPPort)
-	if err := exec.Command("xdg-open", url).Start(); err != nil {
-		log.Printf("cannot open %s: %v", url, err)
+func traySame(a, b trayState) bool {
+	if a.Address != b.Address || len(a.Sessions) != len(b.Sessions) {
+		return false
 	}
+	for i := range a.Sessions {
+		if a.Sessions[i] != b.Sessions[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func trayTooltip(state trayState) string {
+	parts := []string{"linux-terminal  " + state.Address}
+	if len(state.Sessions) == 0 {
+		parts = append(parts, "nobody connected")
+	} else {
+		parts = append(parts, state.Sessions...)
+	}
+	return strings.Join(parts, "\n")
+}
+
+// describe is one line about a session: where it is from, where it is, and what
+// it is running. Enough to recognise which of your own windows it is.
+func describe(session *Session) string {
+	host := session.Remote
+	if index := strings.LastIndex(host, ":"); index > 0 {
+		host = host[:index]
+	}
+	where := short(session.lastCwd)
+	if where == "" {
+		where = "?"
+	}
+	tool := session.lastTool
+	if tool == "" {
+		tool = "shell"
+	}
+	return fmt.Sprintf("%s · %s · %s", host, where, tool)
+}
+
+// localAddress is the address a headset would type. The route to a public
+// address is asked for rather than resolved, which is how the interface that
+// actually carries traffic is picked without listing them all.
+func localAddress() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "this machine"
+	}
+	defer conn.Close()
+	if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		return addr.IP.String()
+	}
+	return "this machine"
+}
+
+func trayOpen(url string) {
+	// xdg-open rather than a browser by name: which browser is the user's
+	// business, and the desktop already knows the answer.
+	if err := exec.Command("xdg-open", url).Start(); err != nil {
+		log.Printf("tray: cannot open %s: %v", url, err)
+	}
+}
+
+func trayClipboard(text string) {
+	for _, candidate := range [][]string{{"wl-copy"}, {"xclip", "-selection", "clipboard"}} {
+		cmd := exec.Command(candidate[0], candidate[1:]...)
+		cmd.Stdin = bytes.NewReader([]byte(text))
+		if err := cmd.Run(); err == nil {
+			return
+		}
+	}
+	log.Printf("tray: cannot copy the address — neither wl-copy nor xclip worked")
 }

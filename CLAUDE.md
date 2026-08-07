@@ -171,58 +171,40 @@ floods it in seconds. Capture live by tag, started **before** launching:
 adb logcat -c && adb logcat -s linux-terminal > log.txt &
 ```
 
-**Do not put a D-Bus signal on a timer.** Every `SetTitle` in the systray library
-emits a Dbusmenu `LayoutUpdated`, and GNOME answers each one by re-reading the
-whole menu, on the one thread its JavaScript runs on. The first `tray.go`
-refreshed eight items every two seconds — about four full menu re-reads per
-second, forever. That is wasteful whatever else is true, so the menu is now
-edge-triggered: it redraws only when the session list would read differently.
+**The tray library is the thing that froze this desktop — not the menu.**
+`slytomcat/systray` froze it four times, hard enough to need a reset each time,
+and the diagnosis went wrong twice before it went right. First the timer was
+blamed, then the menu; the menu was removed and the desktop froze anyway.
 
-**It froze the desktop three times in fifteen minutes**, and the person wearing
-the headset watched it happen: the icon appeared, and everything stopped. That
-account is the primary evidence and it is corroborated by the wreckage — the
-installed binary and the systemd unit were both left at **zero bytes, stamped
-13:04**, because the machine died mid-install, in the second between the file
-being truncated and being written. `install.sh` starts the service as its last
-step; the service raised the icon; the desktop went.
+What settled it was a working counter-example on the same machine: the sibling
+project **linux-vr has a tray with a nine-item menu, repainted on a one-second
+tick, and it has never frozen anything.** It uses `fyne.io/systray`. That is the
+whole difference, and `server/tray.go` is now the same library with the same two
+habits, which are worth keeping whatever library you use:
 
-It was briefly cleared on the grounds that the journal held no mention of the
-server around one of the freezes. That reasoning was wrong: **the server logs to
-a file, not the journal**, so there was never going to be a mention. An absent
-grep hit was mistaken for evidence of absence — do not repeat that here.
+- items are allocated **once** and hidden when unused, never rebuilt — systray
+  cannot remove an item, so a rebuilt menu grows without bound;
+- nothing is repainted unless the state would actually read differently.
 
-What the same investigation did establish, all of it still true:
+Measured after the change: gnome-shell at 15.5–15.7% of one core with the full
+menu registered, against a 16.2% baseline with no tray at all. The broken
+version measured **100%**, pinned.
 
-- The kernel logs **nothing** at freeze time, and `/sys/fs/pstore` is empty.
-- All the frozen boots show **clean shutdown markers** — the machine was alive
-  under the frozen picture. It is the GUI that locks, not the system, so the
-  next one needs no reboot: switch to a TTY with `Ctrl+Alt+F3`.
-- `PropertyNotFound` from `ubuntu-appindicators` looks damning and is **not
-  ours** — it fires every 15 seconds with our server dead, from `netbird-ui`
-  and `weekstat-tray`, over optional properties neither implements.
-- Sunshine already has `encoder = vaapi`, and had quit before the last freeze.
-- The Quest is not an MTP device in adb mode, so gvfs never mounts it.
+**Measure with `/proc/<pid>/stat` deltas.** `ps -o pcpu` reports an average over
+the process's whole life, which read as a comfortable 15.9% while the shell was
+in fact pinned at 100%. That one mistake cost most of an afternoon.
 
-**The edge-triggered version froze it too.** It was tested once, deliberately,
-under a watchdog that killed the server after 75 seconds — and the machine still
-had to be reset. Two things were learned and both are worth more than the icon:
+**`Ctrl+Alt+F3` does not rescue these freezes.** A VT switch is handled below
+the compositor, so what hung was the kernel's display stack — on a Radeon 680M,
+the same DCN 3.1 engine linux-vr's `docs/gotchas.md` warns about. There is no
+lifeline from the machine itself; only ssh from another one.
 
-- `Ctrl+Alt+F3` does **not** work during these freezes. A VT switch is handled
-  below the compositor, so what hangs is the kernel's display stack, not
-  gnome-shell. There is no lifeline from the machine itself; the only way in
-  would be ssh from another one.
-- gnome-shell was measured at **100% of one core** while the item was
-  registered, and stayed there after it was killed. A fresh boot idles at 7%.
-  Measure with `/proc/<pid>/stat` deltas — `ps -o pcpu` reports an average over
-  the process's whole life and hides this completely.
-
-The hardware is a **Radeon 680M (Rembrandt)**, the same DCN 3.1 display engine
-that `docs/gotchas.md` in linux-vr already warns about for GPU hangs. Every boot
-logs one `optc31_disable_crtc` REG_WAIT timeout, including boots that never
-froze, so that line is a red herring — do not spend an afternoon on it.
-
-Four resets bought this paragraph. Do not test the tray again to see if it is
-better now.
+Red herrings that cost time and are not the cause: `PropertyNotFound` from
+`ubuntu-appindicators` fires every 15 seconds with our server dead, from
+`netbird-ui` and `weekstat-tray`; every boot logs one `optc31_disable_crtc`
+REG_WAIT timeout, including boots that never froze; Sunshine was already on
+`vaapi` and had quit beforehand; and the Quest is not an MTP device in adb mode,
+so gvfs never touches it.
 
 **Signal dispositions survive `exec`.** An earlier server set `SIGCHLD` to
 `SIG_IGN` to avoid zombies; every descendant that reaps its own children then

@@ -63,6 +63,10 @@ var (
 	// from elsewhere with an ssh tunnel, not by widening the bind address.
 	flagHTTP     = flag.Int("http", 0, "serve the web console on this port (0 disables it)")
 	flagHTTPBind = flag.String("http-bind", "127.0.0.1", "address the web console listens on")
+
+	// On a machine you sit at, the server is otherwise invisible. On a headless
+	// one there is no bus to attach to and this quietly does nothing.
+	flagTray = flag.Bool("tray", true, "show an icon in the desktop tray, when there is one")
 )
 
 func main() {
@@ -104,7 +108,7 @@ func main() {
 
 	config := loadConfig()
 	server := &Server{
-		Shell: shell, Cwd: cwd, Name: name, Port: *flagPort,
+		Shell: shell, Cwd: cwd, Name: name, Port: *flagPort, HTTPPort: *flagHTTP,
 		Quiet: *flagQuiet, ASR: config.ASR, Started: time.Now(),
 	}
 
@@ -126,29 +130,44 @@ func main() {
 	}
 	log.Printf("%s %s on %s, shells start in %s (%s)", name, version, address, cwd, shell)
 
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Printf("accept failed: %v", err)
-			continue
+	accept := func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				log.Printf("accept failed: %v", err)
+				continue
+			}
+			if tcp, ok := conn.(*net.TCPConn); ok {
+				tcp.SetNoDelay(true)
+			}
+			go server.serveSession(conn)
 		}
-		if tcp, ok := conn.(*net.TCPConn); ok {
-			tcp.SetNoDelay(true)
-		}
-		go server.serveSession(conn)
 	}
+
+	// The tray library owns the goroutine it is started on and never returns, so
+	// it takes the main one and accepting moves aside.
+	if *flagTray && trayAvailable() {
+		go accept()
+		server.runTray()
+		return
+	}
+	if *flagTray {
+		log.Printf("no desktop session here — running without a tray icon")
+	}
+	accept()
 }
 
 // Server is what every session shares: how to start a shell, what to call itself,
 // and where to send audio.
 type Server struct {
-	Shell   string
-	Cwd     string
-	Name    string
-	Port    int
-	Quiet   bool
-	ASR     ASR
-	Started time.Time
+	Shell    string
+	Cwd      string
+	Name     string
+	Port     int
+	HTTPPort int
+	Quiet    bool
+	ASR      ASR
+	Started  time.Time
 
 	mu       sync.Mutex
 	sessions []*Session

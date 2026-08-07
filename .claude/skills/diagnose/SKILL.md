@@ -119,6 +119,25 @@ deliberately not a login shell (on a pty, bash is interactive already and reads
 `.bashrc`), and it drops `CLAUDECODE` and `CLAUDE_CODE_*` so a `claude` started
 in the headset is not a child of whatever session launched the server.
 
+## No tray icon
+
+Only appears where there is a desktop session. The server needs
+`DBUS_SESSION_BUS_ADDRESS` and one of `WAYLAND_DISPLAY` / `DISPLAY`; as a
+systemd user service those come from the session, so check what it actually
+sees:
+
+```sh
+systemctl --user show-environment | grep -E 'WAYLAND_DISPLAY|DISPLAY|DBUS'
+```
+
+If the item is on the bus but nothing is drawn, the shell is the missing part —
+GNOME renders these only through the AppIndicator extension:
+
+```sh
+busctl --user list | grep -i statusnotifier      # is our item registered?
+gnome-extensions list | grep -i appindicator      # can the shell draw it?
+```
+
 ## Dictation
 
 Needs a separate voice agent on port 9102; it is not part of this server.

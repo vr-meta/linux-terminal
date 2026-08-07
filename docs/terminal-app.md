@@ -214,6 +214,7 @@ Working and verified on the host:
       exec, so a `claude` started in the headset is not a child of the session
       that happened to launch the agent
 - [x] client builds — 320 KB APK
+- [x] tray indicator registers on the session bus and lists live sessions
 
 Not yet verified, because it needs the headset:
 

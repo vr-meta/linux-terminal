@@ -41,6 +41,7 @@ docs/         design, measurements, traps — read before changing anything
 | `server/discovery.go` | the UDP probe answer |
 | `server/asr.go` | speech to text, proxied to whatever endpoint is configured |
 | `server/console.go` + `web/` | the localhost web console: sessions, voice settings |
+| `server/tray.go` | the desktop indicator, StatusNotifierItem over D-Bus |
 | `client/.../ServersActivity.java` | the connection manager, the app's front door |
 | `client/.../TermActivity.java` | tabs; one socket and one shell each |
 | `client/.../TermView.java` | drawing and input, written against the emulator |
@@ -70,6 +71,11 @@ transcription key lives in `~/.config/linux-terminal/config.json` (0600) and is
 never sent to the headset, never logged, and never accepted as a command-line
 argument — `ps` shows those to every user on the machine. The web console can
 set it and can close sessions, which is why it binds to localhost by default.
+
+**CGO stays off.** The server is one static binary that runs on a distribution
+older than whatever built it, and that is worth more than any library which
+would take it away. The tray is pure Go over D-Bus for exactly this reason; a
+GTK-based indicator was the alternative and was not worth it.
 
 **Text is drawn from the font, never decoded.** Nothing here encodes or scales a
 picture. If a proposal involves rendering text on the server and sending pixels,

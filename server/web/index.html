@@ -3,117 +3,572 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Local control panel for linux-terminal: machine identity, live sessions, and dictation settings.">
 <title>linux-terminal</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230c0e0f'/%3E%3Crect x='4' y='9' width='24' height='14' rx='7' fill='none' stroke='%2345c98e' stroke-width='2.4'/%3E%3Cpath d='M11 13.5 15 16 11 18.5' fill='none' stroke='%2345c98e' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cline x1='17.5' y1='18.5' x2='21.5' y2='18.5' stroke='%2345c98e' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   :root {
-    --bg: #101115;
-    --card: #1e2027;
-    --line: #2f323c;
-    --text: #e0e2e8;
-    --muted: #969ba8;
-    --accent: #4a86c8;
-    --good: #4a9e6e;
-    --warn: #b06030;
+    color-scheme: dark;
+    --bg: #0c0e0f;
+    --bg-elevated: #15181b;
+    --bg-inset: #0a0c0d;
+    --border: #24282d;
+    --border-strong: #343a41;
+    --text: #e8ecef;
+    --text-secondary: #9aa4ac;
+    --text-tertiary: #5c656d;
+
+    --accent: #3fbd88;
+    --accent-hover: #57cf9c;
+    --accent-press: #2fa374;
+    --accent-soft: rgba(63, 189, 136, 0.14);
+    --accent-soft-strong: rgba(63, 189, 136, 0.24);
+    --accent-ink: #06150f;
+
+    --danger: #d17862;
+    --danger-hover: #dd8b77;
+    --danger-soft: rgba(209, 120, 98, 0.14);
+
+    --warn: #d1a75a;
+    --warn-soft: rgba(209, 167, 90, 0.14);
+
+    --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+
+    --radius-lg: 14px;
+    --radius-md: 9px;
+    --radius-sm: 6px;
   }
+
   * { box-sizing: border-box; }
+
   body {
-    margin: 0; padding: 32px 24px;
-    background: var(--bg); color: var(--text);
-    font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    margin: 0;
+    padding: 28px 20px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 var(--font-ui);
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 900px; margin: 0 auto; }
-  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
-  h2 { font-size: 15px; margin: 32px 0 10px; color: var(--muted); font-weight: 500; }
-  .sub { color: var(--muted); margin: 0 0 8px; }
+
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  .skip-link {
+    position: absolute; left: -999px; top: 0;
+    background: var(--accent); color: var(--accent-ink);
+    padding: 10px 16px; border-radius: 0 0 var(--radius-sm) 0;
+    font-weight: 600; z-index: 10; text-decoration: none;
+  }
+  .skip-link:focus { left: 0; }
+
+  a { color: var(--accent); }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  svg.icon {
+    width: 1em; height: 1em;
+    display: inline-block;
+    vertical-align: -0.15em;
+    fill: currentColor;
+    flex: none;
+  }
+
+  /* ---------- topbar ---------- */
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; flex-wrap: wrap;
+    margin-bottom: 22px;
+  }
+
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .logo-mark { width: 26px; height: 26px; color: var(--accent); flex: none; }
+  .brand-name {
+    font-weight: 600; font-size: 16px; letter-spacing: -0.01em;
+    color: var(--text);
+  }
+
+  .conn-status {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 13px; color: var(--text-secondary);
+  }
+  .conn-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .conn-dot.live { animation: pulse 2.4s ease-in-out infinite; }
+  .conn-dot.down {
+    background: var(--danger);
+    box-shadow: 0 0 0 3px var(--danger-soft);
+    animation: none;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .conn-dot.live { animation: none; }
+  }
+
+  .conn-banner {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--danger-soft); border: 1px solid rgba(209, 120, 98, 0.35);
+    color: #f0c3b6; border-radius: var(--radius-md);
+    padding: 10px 14px; margin-bottom: 18px; font-size: 13.5px;
+  }
+  .conn-banner svg.icon { color: var(--danger); font-size: 15px; }
+
+  /* ---------- identity ---------- */
+
+  .identity-card {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px;
+    margin-bottom: 28px;
+  }
+
+  #main.is-loading .skeleton { animation: skeleton 1.5s ease-in-out infinite; }
+  @keyframes skeleton { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+  @media (prefers-reduced-motion: reduce) {
+    #main.is-loading .skeleton { animation: none; opacity: 0.5; }
+  }
+
+  #main.is-stale .identity-card,
+  #main.is-stale #sessions {
+    opacity: 0.55;
+    transition: opacity 300ms ease;
+  }
+
+  .host-name {
+    font: 600 22px/1.2 var(--font-mono);
+    letter-spacing: -0.01em;
+    margin: 0 0 4px;
+    word-break: break-all;
+  }
+  .host-name .at { color: var(--text-tertiary); font-weight: 400; }
+
+  .identity-sub {
+    margin: 0 0 16px;
+    color: var(--text-secondary);
+    font-size: 13.5px;
+  }
+
+  .identity-meta {
+    display: flex; flex-wrap: wrap; gap: 18px 28px;
+    margin: 0 0 12px; padding: 14px 0 0;
+    border-top: 1px solid var(--border);
+  }
+  .stat { min-width: 72px; }
+  .stat-label {
+    display: block; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-tertiary); margin-bottom: 3px;
+  }
+  .stat-value { font: 13.5px var(--font-mono); color: var(--text); }
+
+  .identity-shell {
+    margin: 0; padding-top: 12px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--text-secondary);
+  }
+  .identity-shell code {
+    font: 12.5px var(--font-mono); color: var(--text);
+    background: var(--bg-inset); border: 1px solid var(--border);
+    border-radius: 5px; padding: 1px 5px;
+  }
+
+  /* ---------- section headings ---------- */
+
+  h2 {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-secondary);
+    margin: 0 0 12px;
+  }
+  section + section { margin-top: 30px; }
+
+  /* ---------- sessions ---------- */
+
+  .session-card {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 13px 16px;
+    margin-bottom: 8px;
+    display: flex; align-items: center; gap: 14px;
+    transition: border-color 180ms ease;
+  }
+  .session-card:hover { border-color: var(--border-strong); }
+
+  .session-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); flex: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .session-main { flex: 1 1 auto; min-width: 0; }
+  .session-line1 {
+    font: 13.5px var(--font-mono); color: var(--text);
+    overflow-wrap: anywhere;
+  }
+  .session-line1 .pid { color: var(--text-tertiary); font-family: var(--font-ui); }
+  .session-line2 {
+    margin-top: 2px; font-size: 12.5px; color: var(--text-secondary);
+    display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center;
+  }
+  .session-line2 code {
+    font: 12px var(--font-mono); color: var(--text-secondary);
+  }
+  .tool-badge {
+    font-size: 11px; font-family: var(--font-mono);
+    background: var(--bg-inset); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; color: var(--text-secondary);
+  }
+
+  .btn-disconnect {
+    flex: none;
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 500 13px var(--font-ui); color: var(--danger);
+    background: transparent; border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm); padding: 7px 12px;
+    cursor: pointer; transition: background 160ms ease, border-color 160ms ease, transform 80ms ease;
+  }
+  .btn-disconnect:hover { background: var(--danger-soft); border-color: rgba(209,120,98,0.4); }
+  .btn-disconnect:active { transform: scale(0.97); }
+  .btn-disconnect:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+  .empty-state {
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
+    padding: 28px 16px; text-align: center; color: var(--text-tertiary);
+  }
+  .empty-state svg.icon { font-size: 22px; margin-bottom: 8px; color: var(--text-tertiary); }
+  .empty-state p { margin: 0; font-size: 13.5px; }
+  .empty-state p.hint { margin-top: 3px; font-size: 12.5px; color: var(--text-tertiary); }
+
+  /* ---------- dictation card ---------- */
+
   .card {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 18px 20px 20px;
   }
-  .row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  .grow { flex: 1 1 auto; min-width: 200px; }
-  .muted { color: var(--muted); }
+
+  .status-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
   .pill {
-    padding: 2px 10px; border-radius: 10px; font-size: 13px;
-    background: #2a2d36; color: var(--muted);
+    display: inline-flex; align-items: center; gap: 5px;
+    font: 500 12.5px var(--font-ui); padding: 3px 10px; border-radius: 999px;
+    background: var(--bg-inset); color: var(--text-secondary);
+    border: 1px solid var(--border);
   }
-  .pill.on { background: #234030; color: #9fd8b6; }
-  .pill.off { background: #402a20; color: #e0b090; }
-  button {
-    font: inherit; color: var(--text); background: #2b3a4d;
-    border: 1px solid var(--line); border-radius: 7px;
-    padding: 7px 14px; cursor: pointer;
+  .pill.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .pill.off { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+  .status-detail { color: var(--text-secondary); font-size: 13px; }
+  .status-detail code { font: 12.5px var(--font-mono); color: var(--text); }
+
+  /* segmented control */
+  .segmented {
+    display: grid; grid-template-columns: 1fr 1fr;
+    background: var(--bg-inset); border: 1px solid var(--border);
+    border-radius: var(--radius-md); padding: 3px; gap: 3px;
+    margin-bottom: 8px;
   }
-  button:hover { background: #35485f; }
-  button.danger { background: #43261a; }
-  button.danger:hover { background: #5a3122; }
+  .seg-btn {
+    font: 500 13.5px var(--font-ui); color: var(--text-secondary);
+    background: transparent; border: none; border-radius: 7px;
+    padding: 9px 10px; cursor: pointer;
+    transition: background 160ms ease, color 160ms ease;
+  }
+  .seg-btn:hover { color: var(--text); }
+  .seg-btn[aria-selected="true"] {
+    background: var(--accent-soft-strong); color: var(--accent);
+  }
+
+  .mode-hint {
+    margin: 0 0 18px; font-size: 13px; color: var(--text-secondary);
+  }
+
+  .field { margin-bottom: 16px; }
+  .field-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 5px;
+  }
+  label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+  .field-req { font-size: 11px; color: var(--text-tertiary); }
+  .field-req.required { color: var(--warn); }
+
   input {
-    font: inherit; color: var(--text); background: #15171c;
-    border: 1px solid var(--line); border-radius: 7px;
-    padding: 8px 10px; width: 100%;
+    font: 14px var(--font-mono); color: var(--text); background: var(--bg-inset);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 9px 11px; width: 100%;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
   }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  input::placeholder { color: var(--text-tertiary); font-family: var(--font-ui); }
+  input:hover { border-color: var(--border-strong); }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
+  input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+
+  .field-hint { margin: 5px 0 0; font-size: 12.5px; color: var(--text-tertiary); }
+  .field-error {
+    margin: 6px 0 0; font-size: 12.5px; color: var(--danger);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .field-error:empty { display: none; }
+
+  .security-note {
+    margin: 8px 0 0; padding: 8px 10px;
+    background: var(--bg-inset); border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex; align-items: flex-start; gap: 7px;
+    font-size: 12.5px; color: var(--text-secondary); line-height: 1.5;
+  }
+  .security-note svg.icon { margin-top: 2px; color: var(--text-tertiary); font-size: 13px; }
+  .security-note code {
+    font: 11.5px var(--font-mono); color: var(--text-secondary);
+    background: transparent; padding: 0;
+  }
+
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
-  .empty { color: var(--muted); padding: 6px 2px; }
-  .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
-  @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .form-footer {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
+  }
+
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 8px;
+    font: 600 13.5px var(--font-ui); color: var(--accent-ink);
+    background: var(--accent); border: 1px solid transparent;
+    border-radius: var(--radius-sm); padding: 9px 16px;
+    cursor: pointer; transition: background 160ms ease, transform 80ms ease, opacity 160ms ease;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:active { transform: scale(0.97); }
+  .btn-primary:disabled { opacity: 0.6; cursor: default; transform: none; }
+
+  .spinner {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 2px solid rgba(6, 21, 15, 0.35); border-top-color: var(--accent-ink);
+    animation: spin 700ms linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .save-message {
+    font-size: 13px; display: flex; align-items: center; gap: 6px;
+  }
+  .save-message.ok { color: var(--accent); }
+  .save-message.err { color: var(--danger); }
+  .save-message:empty { display: none; }
+
+  .dirty-flag {
+    font-size: 12.5px; color: var(--text-tertiary);
+    display: flex; align-items: center; gap: 6px;
+    margin-left: auto;
+  }
+  .dirty-flag .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--warn); }
+  .dirty-flag:empty, .dirty-flag[hidden] { display: none; }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 600px) {
+    .grid2 { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 420px) {
+    body { padding: 20px 14px 48px; }
+    .identity-card { padding: 16px; }
+    .card { padding: 16px; }
+    .host-name { font-size: 19px; }
+    .form-footer { flex-direction: column; align-items: stretch; }
+    .dirty-flag { margin-left: 0; }
+  }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-lock" viewBox="0 0 16 16"><path d="M4 7V5a4 4 0 1 1 8 0v2h.5A1.5 1.5 0 0 1 14 8.5v5A1.5 1.5 0 0 1 12.5 15h-9A1.5 1.5 0 0 1 2 13.5v-5A1.5 1.5 0 0 1 3.5 7H4Zm1.5 0h5V5a2.5 2.5 0 0 0-5 0v2Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="M13.7 4.3a1 1 0 0 1 0 1.4l-6.5 6.5a1 1 0 0 1-1.4 0L2.3 8.7a1 1 0 1 1 1.4-1.4L6.5 10.1l5.8-5.8a1 1 0 0 1 1.4 0Z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 16 16"><path d="M8 1.3 15.2 14H.8L8 1.3ZM8 6a.85.85 0 0 0-.85.85v3.1a.85.85 0 0 0 1.7 0v-3.1A.85.85 0 0 0 8 6Zm0 6.35a1 1 0 1 0 0 2 1 1 0 0 0 0-2Z"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 16 16"><rect x="1" y="2" width="14" height="12" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 6.3 6.6 8 4 9.7" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="8" y1="9.7" x2="11.2" y2="9.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+</svg>
+
 <div class="wrap">
 
-  <h1 id="name">…</h1>
-  <p class="sub" id="about"></p>
-
-  <h2>Sessions</h2>
-  <div id="sessions"></div>
-
-  <h2>Dictation</h2>
-  <div class="card">
-    <div class="row">
-      <span id="asr-state" class="pill">…</span>
-      <span class="muted grow" id="asr-where"></span>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo-mark" viewBox="0 0 32 32" role="img" aria-label="linux-terminal">
+        <rect x="1.5" y="6.5" width="29" height="19" rx="9.5" fill="none" stroke="currentColor" stroke-width="2.2"/>
+        <path d="M10 13.2 15 16 10 18.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <line x1="17.5" y1="18.8" x2="22.5" y2="18.8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      </svg>
+      <span class="brand-name">linux-terminal</span>
     </div>
-
-    <div class="grid2">
-      <div>
-        <label for="url">Endpoint</label>
-        <input id="url" placeholder="https://api.openai.com/v1/audio/transcriptions" spellcheck="false">
-      </div>
-      <div>
-        <label for="key">API key</label>
-        <input id="key" type="password" placeholder="leave blank to keep the current one" spellcheck="false">
-      </div>
-      <div>
-        <label for="model">Model</label>
-        <input id="model" placeholder="whisper-1" spellcheck="false">
-      </div>
-      <div>
-        <label for="language">Language hint</label>
-        <input id="language" placeholder="ru — optional, improves accuracy" spellcheck="false">
-      </div>
+    <div class="conn-status" role="status" aria-live="polite">
+      <span class="conn-dot" id="conn-dot"></span>
+      <span id="conn-text">connecting…</span>
     </div>
+  </header>
 
-    <div class="row" style="margin-top:14px">
-      <button id="save">Save</button>
-      <span class="muted" id="saved"></span>
-    </div>
-
-    <p class="note">
-      Leave the endpoint blank and set only a key to use OpenAI. Point it at your
-      own Whisper to keep the audio on your own machines. The key is stored in
-      <code>~/.config/linux-terminal/config.json</code>, mode 0600, and is never
-      sent to the headset or shown here.
-    </p>
+  <div class="conn-banner hidden" id="conn-banner" role="alert">
+    <svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>
+    <span>Can't reach the server. Retrying every 2 seconds — the last known state is shown below.</span>
   </div>
 
+  <main id="main" class="is-loading">
+
+    <section class="identity-card" aria-label="Machine identity">
+      <h1 class="host-name skeleton" id="host-name">…</h1>
+      <p class="identity-sub skeleton" id="host-sub"></p>
+      <div class="identity-meta skeleton" id="identity-meta"></div>
+      <p class="identity-shell skeleton" id="identity-shell"></p>
+    </section>
+
+    <section aria-labelledby="sessions-heading">
+      <h2 id="sessions-heading">Sessions</h2>
+      <div id="sessions"></div>
+    </section>
+
+    <section aria-labelledby="dictation-heading">
+      <h2 id="dictation-heading">Dictation</h2>
+
+      <div class="card">
+        <div class="status-row">
+          <span id="asr-state" class="pill">…</span>
+          <span class="status-detail" id="asr-where"></span>
+        </div>
+
+        <div class="segmented" role="tablist" aria-label="Dictation provider">
+          <button type="button" class="seg-btn" id="mode-openai" role="tab" aria-selected="true">OpenAI Whisper</button>
+          <button type="button" class="seg-btn" id="mode-custom" role="tab" aria-selected="false">Self-hosted</button>
+        </div>
+        <p class="mode-hint" id="mode-hint"></p>
+
+        <div class="field hidden" id="field-url">
+          <div class="field-head">
+            <label for="url">Endpoint URL</label>
+            <span class="field-req required">required</span>
+          </div>
+          <input id="url" placeholder="http://192.168.1.20:9000/v1/audio/transcriptions" spellcheck="false" autocomplete="off">
+          <p class="field-error" id="url-error" role="alert"></p>
+        </div>
+
+        <div class="field">
+          <div class="field-head">
+            <label for="key">API key</label>
+            <span class="field-req" id="key-req"></span>
+          </div>
+          <input id="key" type="password" placeholder="leave blank to keep the current one" spellcheck="false" autocomplete="off">
+          <p class="field-hint" id="key-hint"></p>
+          <div class="security-note">
+            <svg class="icon" aria-hidden="true"><use href="#i-lock"></use></svg>
+            <span>Stored server-side at <code>~/.config/linux-terminal/config.json</code>, file permissions <code>0600</code>. It is read only by this server process and is never sent to the headset or shown in this form again.</span>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="field">
+            <label for="model">Model</label>
+            <input id="model" placeholder="whisper-1" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="language">Language hint</label>
+            <input id="language" placeholder="ru — optional, improves accuracy" spellcheck="false" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="form-footer">
+          <button class="btn-primary" id="save" type="button">
+            <span id="save-label">Save</span>
+          </button>
+          <span class="save-message" id="save-message" role="status" aria-live="polite"></span>
+          <span class="dirty-flag" id="dirty-flag" hidden><span class="dot"></span>Unsaved changes</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
 </div>
 
 <script>
 const $ = id => document.getElementById(id);
-let touched = false;
-for (const id of ["url", "key", "model", "language"]) {
-  $(id).addEventListener("input", () => { touched = true; });
+
+// ---- form state ----
+let dirty = false;          // any field or mode changed since the last successful load/save
+let mode = "openai";        // "openai" | "custom" — which provider tab is active
+let lastAsr = {};           // most recent asr{} from the server, for key_set / defaults
+let loaded = false;         // has the first successful /api/state landed
+let saving = false;
+
+const OPENAI_HOST = /(^|\.)openai\.com$/i;
+
+function deriveMode(url) {
+  if (!url) return "openai";
+  try {
+    const host = new URL(url).hostname;
+    if (OPENAI_HOST.test(host)) return "openai";
+  } catch (e) { /* not a valid URL yet — treat as custom so the value isn't hidden */ }
+  return "custom";
 }
+
+function setMode(next, { markDirty } = { markDirty: true }) {
+  mode = next;
+  if (markDirty) dirty = true;
+  $("mode-openai").setAttribute("aria-selected", String(mode === "openai"));
+  $("mode-custom").setAttribute("aria-selected", String(mode === "custom"));
+  $("field-url").classList.toggle("hidden", mode === "openai");
+  $("mode-hint").textContent = mode === "openai"
+    ? "Audio is sent to OpenAI's hosted Whisper API. An API key is required."
+    : "Audio is sent to a Whisper-compatible server you run yourself — it never reaches OpenAI.";
+  $("key-req").textContent = mode === "openai" ? "required" : "optional";
+  $("key-req").classList.toggle("required", mode === "openai");
+  updateKeyHint();
+  clearFieldError();
+}
+
+function updateKeyHint() {
+  const keySet = !!lastAsr.key_set;
+  $("key").placeholder = keySet
+    ? "a key is set — leave blank to keep it"
+    : (mode === "openai" ? "paste your OpenAI API key" : "leave blank if the server needs none");
+  $("key-hint").textContent = (mode === "openai" && !keySet && !$("key").value)
+    ? "No key saved yet — dictation stays unconfigured until one is added."
+    : "";
+}
+
+function clearFieldError() {
+  $("url-error").textContent = "";
+  $("url").removeAttribute("aria-invalid");
+}
+
+for (const id of ["url", "model", "language", "key"]) {
+  $(id).addEventListener("input", () => {
+    dirty = true;
+    if (id === "url") clearFieldError();
+    if (id === "key") updateKeyHint();
+    $("save-message").textContent = "";
+    $("save-message").className = "save-message";
+    updateDirtyFlag();
+  });
+}
+
+$("mode-openai").addEventListener("click", () => { setMode("openai"); updateDirtyFlag(); });
+$("mode-custom").addEventListener("click", () => {
+  setMode("custom");
+  updateDirtyFlag();
+  if (!$("url").value) $("url").focus();
+});
+
+function updateDirtyFlag() {
+  $("dirty-flag").hidden = !dirty || saving;
+}
+
+// ---- formatting ----
 
 function duration(seconds) {
   if (seconds < 60) return seconds + "s";
@@ -122,87 +577,214 @@ function duration(seconds) {
   return hours + "h " + Math.floor((seconds % 3600) / 60) + "m";
 }
 
+function stat(label, value) {
+  const el = document.createElement("div");
+  el.className = "stat";
+  el.innerHTML = `<span class="stat-label"></span><span class="stat-value"></span>`;
+  el.querySelector(".stat-label").textContent = label;
+  el.querySelector(".stat-value").textContent = value;
+  return el;
+}
+
+// ---- main poll loop ----
+
 async function refresh() {
   let state;
   try {
-    state = await (await fetch("/api/state")).json();
+    const res = await fetch("/api/state");
+    if (!res.ok) throw new Error("bad status " + res.status);
+    state = await res.json();
   } catch (e) {
-    $("name").textContent = "server unreachable";
+    $("conn-dot").className = "conn-dot down";
+    $("conn-text").textContent = "unreachable";
+    $("conn-banner").classList.remove("hidden");
+    if (loaded) $("main").classList.add("is-stale");
     return;
   }
 
-  $("name").textContent = state.name;
-  $("about").textContent =
-    `${state.user}@${state.name} · ${state.os} · port ${state.port} · ` +
-    `shells start in ${state.cwd} (${state.shell}) · up ${duration(state.uptime)}`;
+  $("conn-dot").className = "conn-dot live";
+  $("conn-text").textContent = "live";
+  $("conn-banner").classList.add("hidden");
+  $("main").classList.remove("is-stale");
+  $("main").classList.remove("is-loading");
+  loaded = true;
 
+  $("host-name").innerHTML =
+    `${state.user}<span class="at">@</span>${state.name}`;
+  $("host-sub").textContent =
+    `${state.os} · linux-terminal ${state.version} · port ${state.port}`;
+
+  const meta = $("identity-meta");
+  meta.innerHTML = "";
+  meta.appendChild(stat("Uptime", duration(state.uptime)));
+  meta.appendChild(stat("Sessions", String((state.sessions || []).length)));
+  meta.appendChild(stat("Shell", state.shell));
+  meta.appendChild(stat("Port", state.port));
+
+  $("identity-shell").innerHTML =
+    `Shells start in <code>${escapeHtml(state.cwd)}</code>`;
+
+  renderSessions(state.sessions || []);
+  renderAsr(state.asr || {});
+}
+
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = String(s == null ? "" : s);
+  return div.innerHTML;
+}
+
+function renderSessions(sessions) {
   const list = $("sessions");
   list.innerHTML = "";
-  const sessions = state.sessions || [];
+
   if (!sessions.length) {
     const empty = document.createElement("div");
-    empty.className = "card empty";
-    empty.textContent = "Nobody is connected.";
+    empty.className = "empty-state";
+    empty.innerHTML =
+      `<svg class="icon" aria-hidden="true"><use href="#i-terminal"></use></svg>` +
+      `<p>Nobody is connected.</p>` +
+      `<p class="hint">Sessions appear here when the headset opens a shell.</p>`;
     list.appendChild(empty);
+    return;
   }
+
   for (const session of sessions) {
     const card = document.createElement("div");
-    card.className = "card row";
-    card.innerHTML =
-      `<div class="grow">` +
-        `<div>${session.remote} <span class="muted">· pid ${session.pid}</span></div>` +
-        `<div class="muted">${session.cwd || "?"} · ${session.tool} · ` +
-        `since ${session.since} (${duration(session.seconds)})</div>` +
+    card.className = "session-card";
+
+    const dot = document.createElement("span");
+    dot.className = "session-dot";
+    card.appendChild(dot);
+
+    const main = document.createElement("div");
+    main.className = "session-main";
+    main.innerHTML =
+      `<div class="session-line1">${escapeHtml(session.remote)} ` +
+        `<span class="pid">pid ${escapeHtml(session.pid)}</span></div>` +
+      `<div class="session-line2">` +
+        `<code>${escapeHtml(session.cwd || "?")}</code>` +
+        `<span class="tool-badge">${escapeHtml(session.tool)}</span>` +
+        `<span>since ${escapeHtml(session.since)} (${duration(session.seconds)})</span>` +
       `</div>`;
+    card.appendChild(main);
+
     const button = document.createElement("button");
-    button.className = "danger";
-    button.textContent = "disconnect";
+    button.className = "btn-disconnect";
+    button.type = "button";
+    button.innerHTML = `<svg class="icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>Disconnect`;
     button.onclick = async () => {
       button.disabled = true;
-      await fetch("/api/close?id=" + session.id, { method: "POST" });
-      refresh();
+      button.lastChild.textContent = "Disconnecting…";
+      try {
+        await fetch("/api/close?id=" + encodeURIComponent(session.id), { method: "POST" });
+      } finally {
+        refresh();
+      }
     };
     card.appendChild(button);
+
     list.appendChild(card);
-  }
-
-  const asr = state.asr || {};
-  $("asr-state").textContent = asr.configured ? "configured" : "not configured";
-  $("asr-state").className = "pill " + (asr.configured ? "on" : "off");
-  $("asr-where").textContent = asr.configured
-    ? `${asr.url} · ${asr.model}${asr.key_set ? " · key set" : " · no key"}`
-    : "the microphone button in the headset will say so";
-
-  // Never overwrite what is being typed.
-  if (!touched) {
-    $("url").value = asr.url || "";
-    $("model").value = asr.model || "";
-    $("language").value = asr.language || "";
-    $("key").placeholder = asr.key_set
-      ? "a key is set — leave blank to keep it"
-      : "no key set";
   }
 }
 
+function renderAsr(asr) {
+  lastAsr = asr;
+
+  $("asr-state").textContent = asr.configured ? "configured" : "not configured";
+  $("asr-state").className = "pill " + (asr.configured ? "on" : "off");
+  $("asr-where").innerHTML = asr.configured
+    ? `<code>${escapeHtml(asr.url || "api.openai.com (default)")}</code> · ${escapeHtml(asr.model || "?")}` +
+      (asr.key_set ? " · key set" : " · no key")
+    : "Not configured — the microphone button in the headset will report this.";
+
+  // Never overwrite what the user is actively typing or has changed but not saved yet.
+  if (dirty) return;
+
+  const derived = deriveMode(asr.url);
+  setMode(derived, { markDirty: false });
+
+  $("url").value = derived === "custom" ? (asr.url || "") : "";
+  $("model").value = asr.model || "";
+  $("language").value = asr.language || "";
+  updateKeyHint();
+  updateDirtyFlag();
+}
+
+// ---- save ----
+
+function validate() {
+  clearFieldError();
+  if (mode === "custom") {
+    const url = $("url").value.trim();
+    if (!url) {
+      $("url-error").innerHTML = `<svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>Endpoint URL is required for a self-hosted server.`;
+      $("url").setAttribute("aria-invalid", "true");
+      $("url").focus();
+      return false;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      $("url-error").innerHTML = `<svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>Must start with http:// or https://`;
+      $("url").setAttribute("aria-invalid", "true");
+      $("url").focus();
+      return false;
+    }
+  }
+  return true;
+}
+
 $("save").onclick = async () => {
+  if (!validate()) return;
+
+  saving = true;
+  updateDirtyFlag();
+  $("save").disabled = true;
+  $("save-label").textContent = "Saving…";
+  $("save-message").textContent = "";
+  $("save-message").className = "save-message";
+
   const body = {
-    url: $("url").value,
-    model: $("model").value,
-    language: $("language").value,
+    url: mode === "openai" ? "" : $("url").value.trim(),
+    model: $("model").value.trim(),
+    language: $("language").value.trim(),
     key: $("key").value,
   };
-  const answer = await (await fetch("/api/asr", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  })).json();
-  $("saved").textContent = answer.saved ? "saved" : "failed: " + answer.error;
-  $("key").value = "";
-  touched = false;
+
+  let answer;
+  try {
+    const res = await fetch("/api/asr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    answer = await res.json();
+  } catch (e) {
+    answer = { saved: false, error: "the server did not respond" };
+  }
+
+  saving = false;
+  $("save").disabled = false;
+  $("save-label").textContent = "Save";
+
+  if (answer.saved) {
+    $("save-message").className = "save-message ok";
+    $("save-message").innerHTML = `<svg class="icon" aria-hidden="true"><use href="#i-check"></use></svg>Saved`;
+    $("key").value = "";
+    dirty = false;
+    updateDirtyFlag();
+    setTimeout(() => {
+      if (!dirty) { $("save-message").textContent = ""; $("save-message").className = "save-message"; }
+    }, 4000);
+  } else {
+    $("save-message").className = "save-message err";
+    $("save-message").innerHTML = `<svg class="icon" aria-hidden="true"><use href="#i-alert"></use></svg>Couldn't save: ${escapeHtml(answer.error || "unknown error")}`;
+    // Keep the form as-is so the user can fix and retry; leave dirty=true.
+  }
+
   refresh();
-  setTimeout(() => { $("saved").textContent = ""; }, 4000);
 };
 
+setMode("openai", { markDirty: false });
 refresh();
 setInterval(refresh, 2000);
 </script>

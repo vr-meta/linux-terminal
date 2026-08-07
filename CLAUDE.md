@@ -174,9 +174,20 @@ refreshed eight items every two seconds — about four full menu re-reads per
 second, forever. That is wasteful whatever else is true, so the menu is now
 edge-triggered: it redraws only when the session list would read differently.
 
-**It was not the cause of the desktop freezes, though it was blamed for one.**
-The freeze recurred with the tray not running at all. What the investigation
-actually established, and what saved the next person the same day of guessing:
+**It froze the desktop three times in fifteen minutes**, and the person wearing
+the headset watched it happen: the icon appeared, and everything stopped. That
+account is the primary evidence and it is corroborated by the wreckage — the
+installed binary and the systemd unit were both left at **zero bytes, stamped
+13:04**, because the machine died mid-install, in the second between the file
+being truncated and being written. `install.sh` starts the service as its last
+step; the service raised the icon; the desktop went.
+
+It was briefly cleared on the grounds that the journal held no mention of the
+server around one of the freezes. That reasoning was wrong: **the server logs to
+a file, not the journal**, so there was never going to be a mention. An absent
+grep hit was mistaken for evidence of absence — do not repeat that here.
+
+What the same investigation did establish, all of it still true:
 
 - The kernel logs **nothing** at freeze time, and `/sys/fs/pstore` is empty.
 - All the frozen boots show **clean shutdown markers** — the machine was alive
@@ -188,7 +199,10 @@ actually established, and what saved the next person the same day of guessing:
 - Sunshine already has `encoder = vaapi`, and had quit before the last freeze.
 - The Quest is not an MTP device in adb mode, so gvfs never mounts it.
 
-The tray stays off by default until the real cause is known.
+The tray stays off by default. Turning it back on means proving the
+edge-triggered version is safe, and the only honest way to do that costs
+somebody a frozen desktop — so it does not happen casually, and not on a machine
+with unsaved work.
 
 **Signal dispositions survive `exec`.** An earlier server set `SIGCHLD` to
 `SIG_IGN` to avoid zombies; every descendant that reaps its own children then

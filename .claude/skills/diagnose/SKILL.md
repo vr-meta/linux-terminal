@@ -131,9 +131,20 @@ ps -o pid,pcpu,etime,stat -C gnome-shell
 journalctl --user -n 50 --no-pager
 ```
 
-The tray was blamed for this once and was **not** the cause — the freeze
-recurred with it not running. Before blaming it again, take a baseline;
-indicator errors in the journal are frequently somebody else's:
+**`--tray` is the first suspect and has form**: three freezes in fifteen
+minutes, each one as the icon appeared. It is off by default. If a freeze
+happens without it, check `ps` for a stray server — and remember the server logs
+to a file, so grepping the journal for it proves nothing either way.
+
+A freeze during `install.sh` leaves zero-byte files behind. Check for them
+before reinstalling, or you will run an empty binary and debug the silence:
+
+```sh
+ls -la /usr/local/bin/linux-terminal-server ~/.config/systemd/user/linux-terminal-server.service
+```
+
+Indicator errors in the journal are frequently somebody else's — take a
+baseline before blaming ours:
 
 ```sh
 # with the server NOT running, for 30 seconds

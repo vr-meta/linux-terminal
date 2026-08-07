@@ -67,6 +67,7 @@ public class TermActivity extends Activity implements Terminals.Target {
 
         host = getIntent().getStringExtra(EXTRA_HOST);
         port = getIntent().getIntExtra(EXTRA_PORT, ServersActivity.DEFAULT_PORT);
+        Terminals.opened(host, port);
         serverName = getIntent().getStringExtra(EXTRA_NAME);
         if (serverName == null) serverName = host == null ? "" : host;
         Typeface icons = Typeface.createFromAsset(getAssets(), "MaterialIcons-Regular.ttf");
@@ -145,16 +146,35 @@ public class TermActivity extends Activity implements Terminals.Target {
     @Override
     protected void onResume() {
         super.onResume();
-        // Whichever terminal was resumed last is the one the bar drives. Horizon OS
-        // does not tell an app which of its windows is being looked at, and this is
-        // the closest fact available.
+        // A first claim, for the case where this is the only terminal open: a lone
+        // window may never be told its focus changed, having had it from the start.
         Terminals.setActive(this);
+    }
+
+    /**
+     * Which terminal the bar follows.
+     *
+     * <p>Resuming used to decide it, and with one window that is the same thing.
+     * With two it is not: Horizon OS shows both at once, so both are resumed, and
+     * the bar ended up driven by whichever had resumed most recently rather than
+     * the one being typed into — open Claude in one, leave the other at a prompt,
+     * and the buttons belonged to the wrong shell.
+     *
+     * <p>Focus is the fact that actually answers the question. The window taking
+     * keystrokes is the window the person is working in, whatever else is on
+     * screen beside it.
+     */
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) Terminals.setActive(this);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         Terminals.clearIf(this);
+        Terminals.closed(host, port);
         for (TermTab tab : tabs) tab.session.close();
     }
 
@@ -175,6 +195,19 @@ public class TermActivity extends Activity implements Terminals.Target {
                 paired == null ? "" : paired.token,
                 paired == null ? "" : paired.fingerprint,
                 new HostSession.Listener() {
+                    @Override
+                    public void onServerInfo(org.json.JSONObject info) {
+                        // Remembered against the server, so the connection manager
+                        // can show which Linux this is without a broadcast having
+                        // told the whole network.
+                        Server known = Server.find(TermActivity.this, host, port);
+                        if (known == null) return;
+                        known.user = info.optString("user", known.user);
+                        known.os = info.optString("os", known.os);
+                        known.cwd = info.optString("cwd", known.cwd);
+                        Server.remember(TermActivity.this, known);
+                    }
+
             @Override
             public void onTextChanged() {
                 view.onOutput();

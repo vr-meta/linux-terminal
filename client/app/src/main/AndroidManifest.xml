@@ -39,12 +39,15 @@
             </intent-filter>
         </activity>
 
-        <!-- documentLaunchMode="always" gives every launch its own task, so several
-             terminals — on several machines — can be open side by side. -->
+        <!-- documentLaunchMode is intoExisting, not always: one window per server
+             rather than a new one on every connect. Horizon OS allows three
+             windows and the bar takes one of them, so two terminals is the whole
+             budget — a second window onto a machine that already has one spends
+             it on a duplicate. Tabs are what another shell is for. -->
         <activity
             android:name=".TermActivity"
             android:exported="false"
-            android:documentLaunchMode="always"
+            android:documentLaunchMode="intoExisting"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize|stateHidden"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">

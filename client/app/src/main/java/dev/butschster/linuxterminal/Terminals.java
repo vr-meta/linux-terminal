@@ -55,6 +55,31 @@ public final class Terminals {
     private static final CopyOnWriteArrayList<Watcher> watchers = new CopyOnWriteArrayList<>();
     private static Target active;
 
+    /**
+     * Which machines already have a terminal window open, so the connection
+     * manager can stop offering to open a second one.
+     *
+     * <p>Pressing connect on a machine that already has a window used to hand its
+     * activity a fresh intent, which brought the window forward — and the shell
+     * put it back wherever it liked, so a terminal somebody was working in jumped
+     * across the room. Doing nothing is the correct behaviour; saying so on the
+     * card is what stops it looking broken.
+     */
+    private static final java.util.Set<String> open =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public static void opened(String host, int port) {
+        open.add(host + ":" + port);
+    }
+
+    public static void closed(String host, int port) {
+        open.remove(host + ":" + port);
+    }
+
+    public static boolean isOpen(String host, int port) {
+        return open.contains(host + ":" + port);
+    }
+
     private Terminals() {
     }
 

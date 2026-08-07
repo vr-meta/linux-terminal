@@ -44,6 +44,8 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
     static final int MSG_CONTEXT = 0x82;
     static final int MSG_EXIT = 0x83;
     static final int MSG_SPEECH = 0x84;
+    static final int MSG_INFO = 0x85;
+    static final int MSG_PAIRED = 0x86;
 
     /** Scrollback. 4000 lines is about a full build log and costs a couple of MB. */
     private static final int TRANSCRIPT_ROWS = 4000;
@@ -57,6 +59,13 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
 
         /** Human readable connection state, shown in the bar. */
         void onStatus(String message, boolean connected);
+
+        /**
+         * Who and what this machine is, sent once the session is authenticated.
+         * It used to ride in the discovery broadcast, where anyone on the network
+         * could read it.
+         */
+        void onServerInfo(JSONObject info);
 
         /** The server transcribed what was recorded, or explained why it could not. */
         void onTranscript(String text, String problem);
@@ -123,15 +132,27 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
         new Thread(this::reader, "term-reader").start();
     }
 
+    /**
+     * Closed on a thread of its own, and that is not tidiness.
+     *
+     * <p>Closing a TLS socket is a network operation: the provider drains its
+     * outgoing queue and writes a close_notify before letting go. A plain socket
+     * closed instantly and silently, so doing it from onDestroy was harmless
+     * right up until the connection became encrypted — at which point Android
+     * killed the app with NetworkOnMainThreadException every time a terminal
+     * window was closed.
+     */
     public void close() {
         running = false;
         Socket s = socket;
-        if (s != null) {
+        socket = null;
+        if (s == null) return;
+        new Thread(() -> {
             try {
                 s.close();
             } catch (IOException ignored) {
             }
-        }
+        }, "term-close").start();
     }
 
     /**
@@ -253,6 +274,14 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
                             problem == null || problem.isEmpty() ? null : problem));
                 } catch (Exception e) {
                     Log.w(TAG, "bad transcript: " + e.getMessage());
+                }
+                break;
+            case MSG_INFO:
+                try {
+                    JSONObject info = new JSONObject(new String(payload, StandardCharsets.UTF_8));
+                    main.post(() -> listener.onServerInfo(info));
+                } catch (Exception e) {
+                    Log.w(TAG, "bad server info: " + e.getMessage());
                 }
                 break;
             case MSG_EXIT:

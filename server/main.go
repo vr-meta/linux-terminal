@@ -37,14 +37,19 @@ import (
 // protocols, so one number is enough and one is easier to remember.
 const DefaultPort = 9103
 
+// Set by the release build: -ldflags "-X main.version=..." . A build from a
+// working tree says so rather than claiming a version it is not.
+var version = "dev"
+
 var (
-	flagPort  = flag.Int("port", DefaultPort, "TCP and UDP port to serve on")
-	flagCwd   = flag.String("cwd", "", "where new shells start (default: home)")
-	flagShell = flag.String("shell", "", "shell to run (default: $SHELL)")
-	flagName  = flag.String("name", "", "name shown in the headset (default: hostname)")
-	flagBind  = flag.String("bind", "0.0.0.0", "address to listen on")
-	flagDump  = flag.String("dump-context", "", "print the context for a directory and exit")
-	flagQuiet = flag.Bool("quiet", false, "log sessions only, not every connection detail")
+	flagPort    = flag.Int("port", DefaultPort, "TCP and UDP port to serve on")
+	flagCwd     = flag.String("cwd", "", "where new shells start (default: home)")
+	flagShell   = flag.String("shell", "", "shell to run (default: $SHELL)")
+	flagName    = flag.String("name", "", "name shown in the headset (default: hostname)")
+	flagBind    = flag.String("bind", "0.0.0.0", "address to listen on")
+	flagDump    = flag.String("dump-context", "", "print the context for a directory and exit")
+	flagQuiet   = flag.Bool("quiet", false, "log sessions only, not every connection detail")
+	flagVersion = flag.Bool("version", false, "print the version and exit")
 
 	// Dictation. The headset records; this machine transcribes, so the key never
 	// leaves it. Any OpenAI-compatible endpoint works — the official one, or a
@@ -63,6 +68,11 @@ var (
 func main() {
 	flag.Parse()
 	log.SetFlags(log.Ltime)
+
+	if *flagVersion {
+		fmt.Println(version)
+		return
+	}
 
 	home, _ := os.UserHomeDir()
 
@@ -114,7 +124,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("cannot listen on %s: %v", address, err)
 	}
-	log.Printf("%s on %s, shells start in %s (%s)", name, address, cwd, shell)
+	log.Printf("%s %s on %s, shells start in %s (%s)", name, version, address, cwd, shell)
 
 	for {
 		conn, err := listener.Accept()

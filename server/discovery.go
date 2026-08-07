@@ -33,7 +33,8 @@ type Announcement struct {
 	Cwd     string `json:"cwd"`
 	// Whether dictation will work. The headset says so on the button rather than
 	// letting you speak for a minute and then reporting there was nowhere to send it.
-	Voice bool `json:"voice"`
+	Voice   bool   `json:"voice"`
+	Release string `json:"release"`
 }
 
 func (s *Server) serveDiscovery(bind string) {
@@ -49,7 +50,7 @@ func (s *Server) serveDiscovery(bind string) {
 	reply, err := json.Marshal(Announcement{
 		Proto: discoveryTag, Version: 1, Name: s.Name, Port: s.Port,
 		User: currentUser(), OS: osRelease(), Cwd: short(s.Cwd),
-		Voice: s.ASR.configured(),
+		Voice: s.ASR.configured(), Release: version,
 	})
 	if err != nil {
 		return

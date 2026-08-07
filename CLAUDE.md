@@ -99,6 +99,27 @@ Inspect what the bar would show without a headset in reach:
 ./server/linux-terminal-server --dump-context ~/some/project
 ```
 
+## Releases
+
+A tag starting with `v` builds both halves and attaches them to a GitHub
+release: static server binaries for amd64 and arm64, and a signed APK.
+`workflow_dispatch` runs the same build without cutting a release, which is how
+a broken workflow is found without a throwaway tag.
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+gh workflow run release.yml          # or just check that it still builds
+```
+
+**The signing key lives at `~/.config/linux-terminal/release.keystore`**, outside
+the repository, with its passwords in `signing.env` beside it (both 0600). The
+same key is in the repository secrets so CI signs identically. Losing it means
+every headset has to uninstall before the next release will install — Android
+refuses an update signed by a different key.
+
+Without the secrets the build still works and falls back to a debug key; the CI
+log says so with a warning, and that APK cannot upgrade a properly signed one.
+
 ## Traps that have already cost time
 
 **Check who actually holds the port before diagnosing anything.** A second

@@ -88,6 +88,7 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]any{
 		"name":     s.Name,
+		"version":  version,
 		"port":     s.Port,
 		"shell":    s.Shell,
 		"cwd":      short(s.Cwd),

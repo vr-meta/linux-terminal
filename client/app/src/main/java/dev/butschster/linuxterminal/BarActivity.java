@@ -20,6 +20,16 @@ import java.util.Locale;
  */
 public class BarActivity extends Activity implements ContextBar.Host, Terminals.Watcher {
 
+    /**
+     * Whether a bar window exists. A static boolean set once was wrong: closing the
+     * bar left every later terminal believing one was already up.
+     */
+    private static boolean open;
+
+    public static boolean isOpen() {
+        return open;
+    }
+
     private ContextBar bar;
     private Dictation dictation;
     private String dictationHost;
@@ -27,12 +37,19 @@ public class BarActivity extends Activity implements ContextBar.Host, Terminals.
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        open = true;
         bar = new ContextBar(this, this);
         setContentView(bar);
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        open = false;
     }
 
     @Override

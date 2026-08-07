@@ -72,3 +72,25 @@ darwin-arm64, darwin-x64, win32-x64)". The skills in
 [meta-quest/agentic-tools](https://github.com/meta-quest/agentic-tools) are plain
 markdown and are readable from a clone; only the CLI and its doc-search are
 unavailable here.
+
+
+## Measured: LAUNCH_ADJACENT produces no window here
+
+Meta documents `FLAG_ACTIVITY_LAUNCH_ADJACENT` as the way to open a second panel
+— "the panel activity will be launched next to the actively running activity
+from your app" — and it is the only placement they document at all. So it looked
+like the right choice over `FLAG_ACTIVITY_NEW_DOCUMENT`, which appears nowhere
+in their documentation.
+
+On this device it produced **no window at all**. The bar activity did not reach
+the activity stack; `dumpsys activity activities` listed only the two others.
+Switching back to `NEW_DOCUMENT | MULTIPLE_TASK` with
+`documentLaunchMode="always"` restored it immediately.
+
+Unverified: whether the flag is inert here in general, or whether it needs
+something else present — split-screen support, or the Spatial SDK context the
+documentation page belongs to. What is established is only the observation
+above, on Horizon OS v206, from a plain 2D app.
+
+The order this project settles things in: a measurement on this hardware beats a
+documented behaviour that does not reproduce on it.

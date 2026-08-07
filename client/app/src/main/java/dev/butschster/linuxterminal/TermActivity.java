@@ -44,9 +44,6 @@ public class TermActivity extends Activity implements Terminals.Target {
      */
     private static final int DEFAULT_FONT_PX = 20;
 
-    /** Only the first terminal window opens the bar; after that there is one already. */
-    private static boolean barOpened;
-
     // The active tab is filled with the terminal's colour and the inactive ones with
     // the strip's, so a tab reads as part of what is below it rather than as a button
     // sitting above it — the same shape as the desktop terminal fork.
@@ -99,6 +96,11 @@ public class TermActivity extends Activity implements Terminals.Target {
         View add = buttons.key("+", Buttons.COMMAND, "new tab here", v -> addTab(currentCwd()));
         strip.addView(add, sideParams());
 
+        // A window that can be closed has to be openable again, and a bar that is
+        // gone takes Escape and Enter with it.
+        View bar = buttons.key("bar", Buttons.KEY, "show the key bar", v -> openBar());
+        strip.addView(bar, sideParams());
+
         content = new FrameLayout(this);
         root.addView(content, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -115,19 +117,22 @@ public class TermActivity extends Activity implements Terminals.Target {
 
         addTab(null);
 
-        if (!barOpened) {
-            barOpened = true;
-            Intent bar = new Intent(this, BarActivity.class);
-            // LAUNCH_ADJACENT is the one placement Meta documents for a 2D app:
-            // "the panel activity will be launched next to the actively running
-            // activity from your app". NEW_DOCUMENT would also give it a window of
-            // its own, but where that window lands is documented nowhere, and this
-            // project does not get to guess about this platform.
-            bar.addFlags(Intent.FLAG_ACTIVITY_LAUNCH_ADJACENT
-                    | Intent.FLAG_ACTIVITY_NEW_TASK
-                    | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-            startActivity(bar);
-        }
+        openBar();
+    }
+
+    /**
+     * Bring up the bar, or bring the existing one forward.
+     *
+     * <p>NEW_DOCUMENT and not LAUNCH_ADJACENT. Meta documents the latter — "launched
+     * next to the actively running activity from your app" — and on this device it
+     * produced no window at all: the bar simply vanished. The documented flag lost to
+     * the measured one, which is the order this project settles things in.
+     */
+    private void openBar() {
+        if (BarActivity.isOpen()) return;
+        Intent bar = new Intent(this, BarActivity.class);
+        bar.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        startActivity(bar);
     }
 
     private LinearLayout.LayoutParams sideParams() {

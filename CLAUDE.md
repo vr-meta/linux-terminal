@@ -199,10 +199,26 @@ What the same investigation did establish, all of it still true:
 - Sunshine already has `encoder = vaapi`, and had quit before the last freeze.
 - The Quest is not an MTP device in adb mode, so gvfs never mounts it.
 
-The tray stays off by default. Turning it back on means proving the
-edge-triggered version is safe, and the only honest way to do that costs
-somebody a frozen desktop — so it does not happen casually, and not on a machine
-with unsaved work.
+**The edge-triggered version froze it too.** It was tested once, deliberately,
+under a watchdog that killed the server after 75 seconds — and the machine still
+had to be reset. Two things were learned and both are worth more than the icon:
+
+- `Ctrl+Alt+F3` does **not** work during these freezes. A VT switch is handled
+  below the compositor, so what hangs is the kernel's display stack, not
+  gnome-shell. There is no lifeline from the machine itself; the only way in
+  would be ssh from another one.
+- gnome-shell was measured at **100% of one core** while the item was
+  registered, and stayed there after it was killed. A fresh boot idles at 7%.
+  Measure with `/proc/<pid>/stat` deltas — `ps -o pcpu` reports an average over
+  the process's whole life and hides this completely.
+
+The hardware is a **Radeon 680M (Rembrandt)**, the same DCN 3.1 display engine
+that `docs/gotchas.md` in linux-vr already warns about for GPU hangs. Every boot
+logs one `optc31_disable_crtc` REG_WAIT timeout, including boots that never
+froze, so that line is a red herring — do not spend an afternoon on it.
+
+Four resets bought this paragraph. Do not test the tray again to see if it is
+better now.
 
 **Signal dispositions survive `exec`.** An earlier server set `SIGCHLD` to
 `SIG_IGN` to avoid zombies; every descendant that reaps its own children then

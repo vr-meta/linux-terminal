@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"log"
 	"net"
@@ -43,9 +42,6 @@ import (
 // fyne.io/systray is pure Go on Linux — cgo only on macOS, which this never
 // builds for — so the static binary and the arm64 cross-build survive.
 
-//go:embed web/tray.png
-var trayIcon []byte
-
 // Where this came from. In the menu because a machine running a server someone
 // installed six months ago should be able to say where to read about it.
 const repoURL = "https://github.com/vr-meta/linux-terminal"
@@ -85,7 +81,7 @@ func (s *Server) runTray() {
 func (s *Server) trayReady() {
 	state := s.trayStatus()
 
-	systray.SetIcon(trayIcon)
+	systray.SetIcon(trayIconPNG())
 	systray.SetTitle("")
 	systray.SetTooltip(trayTooltip(state))
 

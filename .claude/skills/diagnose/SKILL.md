@@ -140,12 +140,27 @@ gnome-extensions list | grep -i appindicator      # can the shell draw it?
 
 ## Dictation
 
-Needs a separate voice agent on port 9102; it is not part of this server.
+Recognition happens on the server, over the session that already exists — there
+is no second port and no separate agent. What there is, is an endpoint the
+server posts to, and it may not be set:
 
 ```sh
-ss -ltnp | grep 9102
+curl -s localhost:9104/api/state | python3 -m json.tool | grep -A5 asr
 ```
 
-"nothing recognised" with a moving level meter means audio reached the agent and
-came back empty — the endpoint or its key is the suspect. A flat meter means the
-microphone never delivered samples; check the runtime permission.
+The server also says so on startup: `dictation is off — no endpoint configured`.
+
+When it is configured and still fails, the server logs the endpoint's **own**
+words — a wrong key or a wrong model name announces itself there:
+
+```sh
+journalctl --user -u linux-terminal-server -n 30 --no-pager | grep -i dictation
+```
+
+Reading the meter in the headset:
+
+| What you see | What it means |
+|---|---|
+| flat meter | the microphone never delivered samples — check the runtime permission |
+| meter moves, then an error | the audio reached the endpoint; the endpoint is the suspect |
+| meter moves, no text, no error | recognised silence — nothing was said loudly enough |

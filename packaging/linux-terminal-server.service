@@ -1,0 +1,20 @@
+[Unit]
+Description=linux-terminal — shells served to a VR headset as text
+Documentation=https://github.com/vr-meta/linux-terminal
+After=network.target
+
+[Service]
+# A user service on purpose. The shells this opens are yours: they inherit your
+# environment, your PATH and your ~/.bashrc, and none of that survives being run
+# as root — nor should it.
+ExecStart=@BINDIR@/linux-terminal-server --cwd @HOME@
+Restart=on-failure
+RestartSec=2
+
+# The point of the whole product is a live shell, so the service must not be
+# killed for having children that outlive a reload.
+KillMode=mixed
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

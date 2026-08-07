@@ -1,0 +1,22 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+*.keystore
+
+# Go
+server/linux-terminal-server
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Secrets — nothing should reach here anyway
+.env
+*.pem
+*.key
+
+*.log

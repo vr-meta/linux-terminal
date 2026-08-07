@@ -63,10 +63,19 @@ backspace, `^W`, `^U`, the arrows and Enter live on a fixed half, built once and
 never rebuilt. The Quest's own keyboard has none of them; without them a
 terminal cannot be used at all.
 
-**Dictation goes straight into the pty.** Speak, and the text lands at the
-cursor without being submitted — a misheard word is fixed on the line it landed
-on, and pressing Enter stays a decision. Needs a Whisper-compatible endpoint;
-see [`docs/voice.md`](docs/voice.md).
+**Dictation goes straight into the pty**, and the **server** does the
+recognition. The headset records; this machine transcribes and hands the text
+back over the connection that already exists. A key shipped to a headset is a
+key on a device you carry into other people's houses; on the server it sits in a
+file only your account can read. Point it at OpenAI with a key, or at a Whisper
+you run yourself — the difference is a URL. See [`docs/voice.md`](docs/voice.md).
+
+**The server has a small web console.** It runs otherwise invisibly as a user
+service, and "is anyone connected, and where does dictation go" should not
+require reading a log over ssh. On `http://localhost:9104`: live sessions with
+their directory and foreground program, a button to disconnect one, and the
+transcription settings. Localhost-only — it has no authentication, so reach it
+from elsewhere with `ssh -L 9104:localhost:9104`.
 
 ## Install the server
 
@@ -127,6 +136,7 @@ lets them sit next to a browser or anything else.
 | text size | `A−` / `A+` on the bar |
 | the on-screen keyboard | the keyboard button |
 | dictation | the microphone button |
+| who is connected, where voice goes | `http://localhost:9104` on the server |
 
 ## How it is put together
 
@@ -136,8 +146,11 @@ Linux                                        Quest 3
 │ linux-terminal-server     │                │ ServersActivity          │
 │   ├─ pty ── bash ── claude│◄──── TCP ─────►│ TermActivity  (tabs)     │
 │   ├─ tcgetpgrp → /proc    │  framed msgs   │ BarActivity   (buttons)  │
-│   └─ builds the buttons   │◄──── UDP ──────┤ Discovery                │
-└───────────────────────────┘   discovery    └──────────────────────────┘
+│   ├─ builds the buttons   │◄──── UDP ──────┤ Discovery                │
+│   └─ transcribes speech   │◄──── PCM ──────┤ Dictation                │
+├───────────────────────────┤     text ─────►└──────────────────────────┘
+│ web console :9104         │
+└───────────────────────────┘
 ```
 
 The buttons are computed on the **server**, not in the app. The server is the

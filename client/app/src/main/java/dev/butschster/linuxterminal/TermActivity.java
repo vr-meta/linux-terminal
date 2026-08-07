@@ -189,6 +189,14 @@ public class TermActivity extends Activity implements Terminals.Target {
                 if (connected) view.logState();
                 publish(holder[0]);
             }
+
+            @Override
+            public void onTranscript(String text, String problem) {
+                // Straight into the pty, not submitted: a misheard word is fixed on
+                // the line it landed on, and pressing Enter stays a decision.
+                if (text != null && holder[0] == activeTab()) view.send(text);
+                Terminals.transcript(text, problem);
+            }
         });
         view.attach(session);
         TermTab tab = new TermTab(view, session);
@@ -299,6 +307,12 @@ public class TermActivity extends Activity implements Terminals.Target {
     public JSONObject context() {
         TermTab tab = activeTab();
         return tab == null ? null : tab.context();
+    }
+
+    @Override
+    public void transcribe(byte[] pcm, int rate, int channels) {
+        TermTab tab = activeTab();
+        if (tab != null) tab.session.sendAudio(pcm, rate, channels);
     }
 
     @Override

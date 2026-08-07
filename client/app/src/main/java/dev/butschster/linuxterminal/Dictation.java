@@ -7,29 +7,25 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 
 /**
- * Speech into the terminal.
+ * Records speech. Nothing more.
  *
- * <p>The recognition itself is the host's existing voice agent, unchanged. What is
- * different from the streamed desktop is where the text ends up: there it had to be
- * pushed into somebody else's window through the clipboard and Ctrl+V, because uinput
- * speaks scancodes and mutter does not implement the virtual keyboard protocol. Here the
- * client owns the pty, so the transcript is simply written to it — the whole class of
- * layout problems disappears rather than being worked around.
+ * <p>Recognition happens on the server, over the connection that already exists. That
+ * is not a detail of where the code sits: an API key shipped to a headset is a key on a
+ * device you carry into other people's houses, and a second endpoint would mean a second
+ * port and a second firewall rule. Here the audio rides the session and the key stays on
+ * the machine that owns it.
  */
 public class Dictation {
 
-    private static final String TAG = "linux-vr";
-    private static final int VOICE_PORT = 9102;
-    private static final int SAMPLE_RATE = 16000;   // what Whisper resamples to anyway
+    private static final String TAG = "linux-terminal";
+
+    /** What Whisper resamples to anyway, so recording here is lossless for it. */
+    public static final int SAMPLE_RATE = 16000;
+    public static final int CHANNELS = 1;
+
     private static final long MAX_MS = 5 * 60 * 1000;
 
     public interface Listener {
@@ -37,21 +33,20 @@ public class Dictation {
 
         void onElapsed(long millis);
 
-        void onRecognising();
+        /** Recording finished: here are the samples, send them somewhere. */
+        void onAudio(byte[] pcm);
 
-        /** Transcript, or null when there was nothing to hear. */
-        void onResult(String text, String problem);
+        /** Nothing usable was recorded, and why. */
+        void onFailed(String problem);
     }
 
-    private final String host;
     private final Listener listener;
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private volatile boolean recording;
     private long startedAt;
 
-    public Dictation(String host, Listener listener) {
-        this.host = host;
+    public Dictation(Listener listener) {
         this.listener = listener;
     }
 
@@ -68,9 +63,7 @@ public class Dictation {
     }
 
     public void stop() {
-        if (!recording) return;
         recording = false;
-        main.post(listener::onRecognising);
     }
 
     private void tick() {
@@ -83,7 +76,7 @@ public class Dictation {
         int minBuffer = AudioRecord.getMinBufferSize(
                 SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         if (minBuffer <= 0) {
-            finish(null, "microphone unavailable");
+            fail("microphone unavailable");
             return;
         }
 
@@ -94,12 +87,12 @@ public class Dictation {
                     SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT, minBuffer * 4);
         } catch (SecurityException e) {
-            finish(null, "no permission to record");
+            fail("no permission to record");
             return;
         }
         if (recorder.getState() != AudioRecord.STATE_INITIALIZED) {
             recorder.release();
-            finish(null, "recorder did not initialise");
+            fail("recorder did not initialise");
             return;
         }
 
@@ -116,7 +109,6 @@ public class Dictation {
             if (System.currentTimeMillis() - startedAt > MAX_MS) {
                 Log.i(TAG, "dictation hit the five minute limit");
                 recording = false;
-                main.post(listener::onRecognising);
             }
         }
         recorder.stop();
@@ -125,38 +117,15 @@ public class Dictation {
         byte[] pcm = captured.toByteArray();
         Log.i(TAG, "captured " + (pcm.length / (SAMPLE_RATE * 2.0)) + "s");
         if (pcm.length == 0) {
-            finish(null, "nothing recorded");
+            fail("nothing recorded");
             return;
         }
-        transcribe(pcm);
+        main.post(() -> listener.onAudio(pcm));
     }
 
-    private void transcribe(byte[] pcm) {
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, VOICE_PORT), 3000);
-            OutputStream out = socket.getOutputStream();
-            // "asr" and not "pcm": transcribe only, do not paste anywhere.
-            out.write(("asr " + SAMPLE_RATE + " 1\n").getBytes("UTF-8"));
-            out.write(pcm);
-            out.flush();
-            socket.shutdownOutput();
-
-            socket.setSoTimeout(60000);
-            BufferedReader in = new BufferedReader(
-                    new InputStreamReader(socket.getInputStream(), "UTF-8"));
-            String text = in.readLine();
-            Log.i(TAG, "recognised: " + text);
-            if (text == null || text.trim().isEmpty()) finish(null, "nothing recognised");
-            else finish(text.trim(), null);
-        } catch (IOException e) {
-            Log.w(TAG, "recognition failed: " + e.getMessage());
-            finish(null, "recognition failed");
-        }
-    }
-
-    private void finish(String text, String problem) {
+    private void fail(String problem) {
         recording = false;
-        main.post(() -> listener.onResult(text, problem));
+        main.post(() -> listener.onFailed(problem));
     }
 
     /** Root mean square of a 16-bit little-endian block, normalised to 0..1. */

@@ -32,7 +32,6 @@ public class BarActivity extends Activity implements ContextBar.Host, Terminals.
 
     private ContextBar bar;
     private Dictation dictation;
-    private String dictationHost;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -40,6 +39,8 @@ public class BarActivity extends Activity implements ContextBar.Host, Terminals.
         open = true;
         bar = new ContextBar(this, this);
         setContentView(bar);
+
+        dictation = new Dictation(new DictationListener());
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
@@ -118,27 +119,11 @@ public class BarActivity extends Activity implements ContextBar.Host, Terminals.
         if (target != null) target.scroll(rows);
     }
 
-    /**
-     * Dictation talks to the same machine the active terminal does. Reading a fixed
-     * address from a file was fine when there was one host; with a connection manager
-     * the answer changes with the window in front.
-     */
-    private Dictation dictationFor(Terminals.Target target) {
-        String host = target.host();
-        if (host == null) return null;
-        if (dictation == null || !host.equals(dictationHost)) {
-            dictation = new Dictation(host, new DictationListener());
-            dictationHost = host;
-        }
-        return dictation;
-    }
-
     @Override
     public void onDictate() {
-        Terminals.Target target = target();
-        if (target == null) return;
-        dictation = dictationFor(target);
-        if (dictation == null || dictation.isRecording()) return;
+        // Recognition happens on whichever server the active terminal is on, so
+        // there is nothing to configure here and nothing to point at.
+        if (target() == null || dictation.isRecording()) return;
         bar.showRecording();
         dictation.start();
     }
@@ -146,6 +131,16 @@ public class BarActivity extends Activity implements ContextBar.Host, Terminals.
     @Override
     public void onStopDictating() {
         if (dictation != null) dictation.stop();
+        bar.showRecognising();
+    }
+
+    /** The server answered; the terminal has already written the text into its pty. */
+    @Override
+    public void onTranscript(String text, String problem) {
+        bar.hideRecording();
+        if (text == null) {
+            bar.setStatus(problem == null ? "nothing recognised" : problem);
+        }
     }
 
     private class DictationListener implements Dictation.Listener {
@@ -161,21 +156,20 @@ public class BarActivity extends Activity implements ContextBar.Host, Terminals.
         }
 
         @Override
-        public void onRecognising() {
+        public void onAudio(byte[] pcm) {
+            Terminals.Target target = target();
+            if (target == null) {
+                bar.hideRecording();
+                return;
+            }
             bar.showRecognising();
+            target.transcribe(pcm, Dictation.SAMPLE_RATE, Dictation.CHANNELS);
         }
 
         @Override
-        public void onResult(String text, String problem) {
+        public void onFailed(String problem) {
             bar.hideRecording();
-            Terminals.Target target = target();
-            if (text != null && target != null) {
-                // Straight into the pty, not submitted: a misheard word is fixed on
-                // the line it landed on, and pressing Enter stays a decision.
-                target.send(text, false);
-            } else {
-                bar.setStatus(problem == null ? "nothing recognised" : problem);
-            }
+            bar.setStatus(problem);
         }
     }
 }

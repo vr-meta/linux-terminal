@@ -38,9 +38,11 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
     static final int MSG_DATA = 0x01;
     static final int MSG_RESIZE = 0x02;
     static final int MSG_REQUEST = 0x03;
+    static final int MSG_AUDIO = 0x04;
     static final int MSG_OUT = 0x81;
     static final int MSG_CONTEXT = 0x82;
     static final int MSG_EXIT = 0x83;
+    static final int MSG_SPEECH = 0x84;
 
     /** Scrollback. 4000 lines is about a full build log and costs a couple of MB. */
     private static final int TRANSCRIPT_ROWS = 4000;
@@ -54,6 +56,9 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
 
         /** Human readable connection state, shown in the bar. */
         void onStatus(String message, boolean connected);
+
+        /** The server transcribed what was recorded, or explained why it could not. */
+        void onTranscript(String text, String problem);
     }
 
     private final String host;
@@ -203,6 +208,18 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
                     Log.w(TAG, "bad context: " + e.getMessage());
                 }
                 break;
+            case MSG_SPEECH:
+                try {
+                    JSONObject speech = new JSONObject(new String(payload, StandardCharsets.UTF_8));
+                    String text = speech.optString("text", null);
+                    String problem = speech.optString("error", null);
+                    main.post(() -> listener.onTranscript(
+                            text == null || text.isEmpty() ? null : text,
+                            problem == null || problem.isEmpty() ? null : problem));
+                } catch (Exception e) {
+                    Log.w(TAG, "bad transcript: " + e.getMessage());
+                }
+                break;
             case MSG_EXIT:
                 status("shell exited", false);
                 break;
@@ -253,6 +270,26 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
         if (socket == null) return;
         frame(MSG_RESIZE, ("{\"cols\":" + columns + ",\"rows\":" + rows + "}")
                 .getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Send recorded speech for the server to transcribe.
+     *
+     * <p>One frame — a 4-byte header length, the header, then the samples — rather than
+     * two, so a client that dies mid-upload cannot leave the server reading a stream
+     * that will never finish.
+     */
+    public void sendAudio(byte[] pcm, int rate, int channels) {
+        byte[] header = ("{\"rate\":" + rate + ",\"channels\":" + channels + "}")
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] payload = new byte[4 + header.length + pcm.length];
+        payload[0] = (byte) (header.length >>> 24);
+        payload[1] = (byte) (header.length >>> 16);
+        payload[2] = (byte) (header.length >>> 8);
+        payload[3] = (byte) header.length;
+        System.arraycopy(header, 0, payload, 4, header.length);
+        System.arraycopy(pcm, 0, payload, 4 + header.length, pcm.length);
+        frame(MSG_AUDIO, payload);
     }
 
     public void request(String json) {

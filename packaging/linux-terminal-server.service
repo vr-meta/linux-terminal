@@ -7,7 +7,10 @@ After=network.target
 # A user service on purpose. The shells this opens are yours: they inherit your
 # environment, your PATH and your ~/.bashrc, and none of that survives being run
 # as root — nor should it.
-ExecStart=@BINDIR@/linux-terminal-server --cwd @HOME@
+# The web console is bound to localhost: it can close sessions and set the
+# transcription key, and it has no authentication. Reach it from elsewhere with
+# an ssh tunnel — ssh -L 9104:localhost:9104 this-machine — not by widening it.
+ExecStart=@BINDIR@/linux-terminal-server --cwd @HOME@ --http 9104
 Restart=on-failure
 RestartSec=2
 

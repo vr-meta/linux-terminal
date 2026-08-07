@@ -39,6 +39,8 @@ docs/         design, measurements, traps — read before changing anything
 | `server/context.go` | cwd, foreground process, listings, skills, git |
 | `server/actions.go` | **the button tables** — this is where a new tool is taught |
 | `server/discovery.go` | the UDP probe answer |
+| `server/asr.go` | speech to text, proxied to whatever endpoint is configured |
+| `server/console.go` + `web/` | the localhost web console: sessions, voice settings |
 | `client/.../ServersActivity.java` | the connection manager, the app's front door |
 | `client/.../TermActivity.java` | tabs; one socket and one shell each |
 | `client/.../TermView.java` | drawing and input, written against the emulator |
@@ -62,6 +64,12 @@ constructed in the constructor and context never touches it. An earlier version
 had those keys in an ordinary group at the end of a list whose earlier groups
 changed length, so starting a program moved Enter and `^C` to another row. That
 is the Touch Bar's failure, committed against the keys that matter most.
+
+**Keys and audio stay on the server side of the trust boundary.** The
+transcription key lives in `~/.config/linux-terminal/config.json` (0600) and is
+never sent to the headset, never logged, and never accepted as a command-line
+argument — `ps` shows those to every user on the machine. The web console can
+set it and can close sessions, which is why it binds to localhost by default.
 
 **Text is drawn from the font, never decoded.** Nothing here encodes or scales a
 picture. If a proposal involves rendering text on the server and sending pixels,

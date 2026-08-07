@@ -24,9 +24,11 @@ const (
 	msgData    = 0x01 // client -> server: raw bytes for the pty
 	msgResize  = 0x02 // client -> server: {"cols":N,"rows":N}
 	msgRequest = 0x03 // client -> server: {"op":...}
+	msgAudio   = 0x04 // client -> server: 4-byte JSON length, JSON header, then PCM
 	msgOut     = 0x81 // server -> client: raw bytes from the pty
 	msgContext = 0x82 // server -> client: context JSON
 	msgExit    = 0x83 // server -> client: {"code":N}
+	msgSpeech  = 0x84 // server -> client: {"text":...} or {"error":...}
 )
 
 // How often the foreground process is re-read. Cheap — two /proc reads — and the
@@ -35,8 +37,12 @@ const pollInterval = 250 * time.Millisecond
 
 // Session is one pty, one client, and the context that follows them.
 type Session struct {
+	ID     int
 	server *Server
 	conn   net.Conn
+
+	Since  time.Time
+	Remote string
 
 	ptmx *os.File
 	cmd  *exec.Cmd
@@ -51,8 +57,13 @@ type Session struct {
 
 func (s *Server) serveSession(conn net.Conn) {
 	log.Printf("session from %s", conn.RemoteAddr())
-	session := &Session{server: s, conn: conn}
+	session := &Session{
+		server: s, conn: conn,
+		Since: time.Now(), Remote: conn.RemoteAddr().String(),
+	}
+	s.track(session)
 	defer func() {
+		s.untrack(session)
 		session.close()
 		log.Printf("session from %s closed", conn.RemoteAddr())
 	}()
@@ -229,6 +240,10 @@ func (s *Session) handle(kind byte, payload []byte) {
 			s.resize(size.Cols, size.Rows)
 		}
 
+	case msgAudio:
+		// Recognition takes seconds and must not stall the pty behind it.
+		go s.transcribe(payload)
+
 	case msgRequest:
 		var request struct {
 			Op   string `json:"op"`
@@ -244,6 +259,47 @@ func (s *Session) handle(kind byte, payload []byte) {
 			s.signal(request.Name)
 		}
 	}
+}
+
+// transcribe: [4-byte JSON length][JSON header][raw PCM]. One frame rather than
+// two, so a client that dies mid-upload cannot leave a half-read stream behind.
+func (s *Session) transcribe(payload []byte) {
+	if len(payload) < 4 {
+		return
+	}
+	headerLength := int(binary.BigEndian.Uint32(payload[:4]))
+	if headerLength < 0 || 4+headerLength > len(payload) {
+		return
+	}
+	var header struct {
+		Rate     int `json:"rate"`
+		Channels int `json:"channels"`
+	}
+	if json.Unmarshal(payload[4:4+headerLength], &header) != nil {
+		return
+	}
+	if header.Rate <= 0 {
+		header.Rate = 16000
+	}
+	if header.Channels <= 0 {
+		header.Channels = 1
+	}
+	pcm := payload[4+headerLength:]
+
+	seconds := float64(len(pcm)) / float64(header.Rate*header.Channels*2)
+	log.Printf("dictation: %.1fs from %s", seconds, s.Remote)
+	if seconds < 0.2 {
+		s.sendJSON(msgSpeech, map[string]string{"error": "too short to be speech"})
+		return
+	}
+
+	text, err := s.server.ASR.transcribe(pcm, header.Rate, header.Channels)
+	if err != nil {
+		log.Printf("dictation failed: %v", err)
+		s.sendJSON(msgSpeech, map[string]string{"error": err.Error()})
+		return
+	}
+	s.sendJSON(msgSpeech, map[string]string{"text": text})
 }
 
 func (s *Session) signal(name string) {

@@ -35,6 +35,9 @@ public final class Terminals {
         /** The server this terminal is connected to — dictation goes to the same one. */
         String host();
 
+        /** Hand recorded speech to this terminal's server for transcription. */
+        void transcribe(byte[] pcm, int rate, int channels);
+
         /** What that server calls itself, for the bar to show. */
         String serverName();
 
@@ -44,6 +47,9 @@ public final class Terminals {
     /** Told when the active terminal changes, or when its context does. */
     public interface Watcher {
         void onTerminalChanged(Target target);
+
+        /** The active terminal's server answered a dictation request. */
+        void onTranscript(String text, String problem);
     }
 
     private static final CopyOnWriteArrayList<Watcher> watchers = new CopyOnWriteArrayList<>();
@@ -70,6 +76,10 @@ public final class Terminals {
 
     public static void notifyWatchers() {
         for (Watcher watcher : watchers) watcher.onTerminalChanged(active);
+    }
+
+    public static void transcript(String text, String problem) {
+        for (Watcher watcher : watchers) watcher.onTranscript(text, problem);
     }
 
     public static void watch(Watcher watcher) {

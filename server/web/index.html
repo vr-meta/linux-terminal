@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>linux-terminal</title>
+<style>
+  :root {
+    --bg: #101115;
+    --card: #1e2027;
+    --line: #2f323c;
+    --text: #e0e2e8;
+    --muted: #969ba8;
+    --accent: #4a86c8;
+    --good: #4a9e6e;
+    --warn: #b06030;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; }
+  h2 { font-size: 15px; margin: 32px 0 10px; color: var(--muted); font-weight: 500; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+  }
+  .row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .grow { flex: 1 1 auto; min-width: 200px; }
+  .muted { color: var(--muted); }
+  .pill {
+    padding: 2px 10px; border-radius: 10px; font-size: 13px;
+    background: #2a2d36; color: var(--muted);
+  }
+  .pill.on { background: #234030; color: #9fd8b6; }
+  .pill.off { background: #402a20; color: #e0b090; }
+  button {
+    font: inherit; color: var(--text); background: #2b3a4d;
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 7px 14px; cursor: pointer;
+  }
+  button:hover { background: #35485f; }
+  button.danger { background: #43261a; }
+  button.danger:hover { background: #5a3122; }
+  input {
+    font: inherit; color: var(--text); background: #15171c;
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 8px 10px; width: 100%;
+  }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .empty { color: var(--muted); padding: 6px 2px; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1 id="name">…</h1>
+  <p class="sub" id="about"></p>
+
+  <h2>Sessions</h2>
+  <div id="sessions"></div>
+
+  <h2>Dictation</h2>
+  <div class="card">
+    <div class="row">
+      <span id="asr-state" class="pill">…</span>
+      <span class="muted grow" id="asr-where"></span>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label for="url">Endpoint</label>
+        <input id="url" placeholder="https://api.openai.com/v1/audio/transcriptions" spellcheck="false">
+      </div>
+      <div>
+        <label for="key">API key</label>
+        <input id="key" type="password" placeholder="leave blank to keep the current one" spellcheck="false">
+      </div>
+      <div>
+        <label for="model">Model</label>
+        <input id="model" placeholder="whisper-1" spellcheck="false">
+      </div>
+      <div>
+        <label for="language">Language hint</label>
+        <input id="language" placeholder="ru — optional, improves accuracy" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:14px">
+      <button id="save">Save</button>
+      <span class="muted" id="saved"></span>
+    </div>
+
+    <p class="note">
+      Leave the endpoint blank and set only a key to use OpenAI. Point it at your
+      own Whisper to keep the audio on your own machines. The key is stored in
+      <code>~/.config/linux-terminal/config.json</code>, mode 0600, and is never
+      sent to the headset or shown here.
+    </p>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let touched = false;
+for (const id of ["url", "key", "model", "language"]) {
+  $(id).addEventListener("input", () => { touched = true; });
+}
+
+function duration(seconds) {
+  if (seconds < 60) return seconds + "s";
+  if (seconds < 3600) return Math.floor(seconds / 60) + "m";
+  const hours = Math.floor(seconds / 3600);
+  return hours + "h " + Math.floor((seconds % 3600) / 60) + "m";
+}
+
+async function refresh() {
+  let state;
+  try {
+    state = await (await fetch("/api/state")).json();
+  } catch (e) {
+    $("name").textContent = "server unreachable";
+    return;
+  }
+
+  $("name").textContent = state.name;
+  $("about").textContent =
+    `${state.user}@${state.name} · ${state.os} · port ${state.port} · ` +
+    `shells start in ${state.cwd} (${state.shell}) · up ${duration(state.uptime)}`;
+
+  const list = $("sessions");
+  list.innerHTML = "";
+  const sessions = state.sessions || [];
+  if (!sessions.length) {
+    const empty = document.createElement("div");
+    empty.className = "card empty";
+    empty.textContent = "Nobody is connected.";
+    list.appendChild(empty);
+  }
+  for (const session of sessions) {
+    const card = document.createElement("div");
+    card.className = "card row";
+    card.innerHTML =
+      `<div class="grow">` +
+        `<div>${session.remote} <span class="muted">· pid ${session.pid}</span></div>` +
+        `<div class="muted">${session.cwd || "?"} · ${session.tool} · ` +
+        `since ${session.since} (${duration(session.seconds)})</div>` +
+      `</div>`;
+    const button = document.createElement("button");
+    button.className = "danger";
+    button.textContent = "disconnect";
+    button.onclick = async () => {
+      button.disabled = true;
+      await fetch("/api/close?id=" + session.id, { method: "POST" });
+      refresh();
+    };
+    card.appendChild(button);
+    list.appendChild(card);
+  }
+
+  const asr = state.asr || {};
+  $("asr-state").textContent = asr.configured ? "configured" : "not configured";
+  $("asr-state").className = "pill " + (asr.configured ? "on" : "off");
+  $("asr-where").textContent = asr.configured
+    ? `${asr.url} · ${asr.model}${asr.key_set ? " · key set" : " · no key"}`
+    : "the microphone button in the headset will say so";
+
+  // Never overwrite what is being typed.
+  if (!touched) {
+    $("url").value = asr.url || "";
+    $("model").value = asr.model || "";
+    $("language").value = asr.language || "";
+    $("key").placeholder = asr.key_set
+      ? "a key is set — leave blank to keep it"
+      : "no key set";
+  }
+}
+
+$("save").onclick = async () => {
+  const body = {
+    url: $("url").value,
+    model: $("model").value,
+    language: $("language").value,
+    key: $("key").value,
+  };
+  const answer = await (await fetch("/api/asr", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })).json();
+  $("saved").textContent = answer.saved ? "saved" : "failed: " + answer.error;
+  $("key").value = "";
+  touched = false;
+  refresh();
+  setTimeout(() => { $("saved").textContent = ""; }, 4000);
+};
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

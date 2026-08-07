@@ -24,10 +24,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Port carries both the TCP sessions and the UDP discovery probes. Different
@@ -42,6 +45,19 @@ var (
 	flagBind  = flag.String("bind", "0.0.0.0", "address to listen on")
 	flagDump  = flag.String("dump-context", "", "print the context for a directory and exit")
 	flagQuiet = flag.Bool("quiet", false, "log sessions only, not every connection detail")
+
+	// Dictation. The headset records; this machine transcribes, so the key never
+	// leaves it. Any OpenAI-compatible endpoint works — the official one, or a
+	// Whisper you run yourself.
+	flagASRURL      = flag.String("asr-url", "", "transcription endpoint (default: OpenAI when a key is set)")
+	flagASRModel    = flag.String("asr-model", "", "transcription model (default: whisper-1)")
+	flagASRLanguage = flag.String("asr-language", "", "language hint, e.g. ru — improves accuracy noticeably")
+
+	// Off by default, and bound to localhost when on: the console can close
+	// sessions and set the transcription key, and has no authentication. Reach it
+	// from elsewhere with an ssh tunnel, not by widening the bind address.
+	flagHTTP     = flag.Int("http", 0, "serve the web console on this port (0 disables it)")
+	flagHTTPBind = flag.String("http-bind", "127.0.0.1", "address the web console listens on")
 )
 
 func main() {
@@ -76,9 +92,22 @@ func main() {
 		name, _ = os.Hostname()
 	}
 
-	server := &Server{Shell: shell, Cwd: cwd, Name: name, Port: *flagPort, Quiet: *flagQuiet}
+	config := loadConfig()
+	server := &Server{
+		Shell: shell, Cwd: cwd, Name: name, Port: *flagPort,
+		Quiet: *flagQuiet, ASR: config.ASR, Started: time.Now(),
+	}
+
+	if server.ASR.configured() {
+		log.Printf("dictation via %s (%s)", hostOf(server.ASR.URL), server.ASR.Model)
+	} else {
+		log.Printf("dictation is off — no endpoint configured, see docs/voice.md")
+	}
 
 	go server.serveDiscovery(*flagBind)
+	if *flagHTTP > 0 {
+		go server.serveHTTP(fmt.Sprintf("%s:%d", *flagHTTPBind, *flagHTTP))
+	}
 
 	address := fmt.Sprintf("%s:%d", *flagBind, *flagPort)
 	listener, err := net.Listen("tcp", address)
@@ -100,13 +129,56 @@ func main() {
 	}
 }
 
-// Server is what every session shares: how to start a shell and what to call itself.
+// Server is what every session shares: how to start a shell, what to call itself,
+// and where to send audio.
 type Server struct {
-	Shell string
-	Cwd   string
-	Name  string
-	Port  int
-	Quiet bool
+	Shell   string
+	Cwd     string
+	Name    string
+	Port    int
+	Quiet   bool
+	ASR     ASR
+	Started time.Time
+
+	mu       sync.Mutex
+	sessions []*Session
+	nextID   int
+}
+
+func (s *Server) track(session *Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.nextID++
+	session.ID = s.nextID
+	s.sessions = append(s.sessions, session)
+}
+
+func (s *Server) untrack(session *Session) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, known := range s.sessions {
+		if known == session {
+			s.sessions = append(s.sessions[:i], s.sessions[i+1:]...)
+			return
+		}
+	}
+}
+
+func (s *Server) liveSessions() []*Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Session, len(s.sessions))
+	copy(out, s.sessions)
+	return out
+}
+
+// hostOf is for logging an endpoint without repeating a path that might carry
+// anything sensitive.
+func hostOf(raw string) string {
+	if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
+		return parsed.Host
+	}
+	return raw
 }
 
 func expandHome(path, home string) string {

@@ -94,6 +94,14 @@ echo "  probes on udp/9103. If it does not appear, add it by address:"
 echo
 echo "      ${address:-<this machine's IP>}:9103"
 echo
+echo "  Dictation needs a transcription endpoint. Set it in the web console:"
+echo
+echo "      http://localhost:9104"
+echo
+echo "  Paste an OpenAI key to use theirs, or point it at a Whisper of your own."
+echo "  The console is localhost-only; from another machine, tunnel it:"
+echo "      ssh -L 9104:localhost:9104 $(whoami)@${address:-this-machine}"
+echo
 echo "  Logs:    journalctl --user -u $BINARY -f"
 echo "  Stop:    systemctl --user stop $BINARY"
 echo "  Remove:  ./install.sh --uninstall"

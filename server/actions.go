@@ -40,26 +40,56 @@ func key(label, send, style string, enter bool, hint string) Action {
 // Duplicating them would put one key in two places, and then neither is the one the
 // hand learns.
 var toolActions = map[string]func(*Context) []Action{
+	// Claude Code. The keys chosen are the ones a headset cannot press: a
+	// chord needs two hands on a keyboard that is not there, and Esc twice in a
+	// row is worse than one key with a name. Slash commands earn their place by
+	// being the ones reached for mid-flow, not by existing — there are eighty.
 	"claude": func(c *Context) []Action {
 		return []Action{
-			key("⇧Tab", esc+"[Z", "key", false, "cycle mode"),
+			key("⇧Tab", esc+"[Z", "key", false, "cycle permission mode"),
 			key("1", "1", "key", false, "permission prompt: yes"),
 			key("2", "2", "key", false, "permission prompt: yes, don't ask again"),
 			key("3", "3", "key", false, "permission prompt: no"),
+			key("Esc Esc", esc+esc, "warn", false, "clear the draft, or rewind"),
+			key("^T", "\x14", "key", false, "show the task checklist"),
+			key("^O", "\x0f", "key", false, "transcript viewer"),
+			key("^B", "\x02", "key", false, "background the running task"),
+			key("^S", "\x13", "key", false, "stash or restore the prompt"),
 			key("/", "/", "key", false, "commands"),
 			key("!", "!", "key", false, "bash"),
 			key("#", "#", "key", false, "memory"),
-			key("/clear", "/clear", "cmd", true, "wipe the conversation"),
-			key("/compact", "/compact", "cmd", true, ""),
-			key("/resume", "/resume", "cmd", true, ""),
+			key("/plan", "/plan", "cmd", true, "plan before a large change"),
+			key("/rewind", "/rewind", "cmd", true, "roll code and chat back to a checkpoint"),
+			key("/branch", "/branch", "cmd", true, "branch the conversation to try another way"),
+			key("/context", "/context", "cmd", true, "what is filling the context"),
+			key("/review", "/review", "cmd", true, "review the diff"),
+			key("/verify", "/verify", "cmd", true, "check the changes actually work"),
+			key("/compact", "/compact", "cmd", true, "summarise to free context"),
+			key("/usage", "/usage", "cmd", true, "tokens and cost this session"),
+			key("/resume", "/resume", "cmd", true, "return to an earlier conversation"),
+			key("/clear", "/clear", "warn", true, "wipe the conversation"),
 		}
 	},
+	// Codex. Its own vocabulary, not Claude's translated: @ searches the
+	// workspace, Tab queues a follow-up while it is still working, and Esc twice
+	// forks the chat from the previous message rather than rewinding it.
 	"codex": func(c *Context) []Action {
 		return []Action{
-			key("/", "/", "key", false, ""),
-			key("1", "1", "key", false, ""),
-			key("2", "2", "key", false, ""),
-			key("3", "3", "key", false, ""),
+			key("@", "@", "key", false, "insert a file from the workspace"),
+			key("!", "!", "key", false, "run a shell command"),
+			key("Esc Esc", esc+esc, "key", false, "edit the previous message and fork"),
+			key("Tab", "\t", "key", false, "queue this for the next turn"),
+			key("^O", "\x0f", "key", false, "copy the last output"),
+			key("/", "/", "key", false, "commands"),
+			key("1", "1", "key", false, "approval prompt: yes"),
+			key("2", "2", "key", false, "approval prompt: no"),
+			key("/diff", "/diff", "cmd", true, "the git diff, untracked files included"),
+			key("/compact", "/compact", "cmd", true, "summarise to free tokens"),
+			key("/copy", "/copy", "cmd", true, "copy the last completed output"),
+			key("/skills", "/skills", "cmd", true, "browse and use skills"),
+			key("/permissions", "/permissions", "cmd", true, "what Codex may do unasked"),
+			key("/init", "/init", "cmd", true, "scaffold an AGENTS.md here"),
+			key("/clear", "/clear", "warn", true, "clear and start a new chat"),
 		}
 	},
 	"vim": func(c *Context) []Action {
@@ -140,7 +170,11 @@ func groupsFor(c *Context) []Group {
 func placeActions(c *Context) []Action {
 	var out []Action
 	if c.Up != "" {
-		out = append(out, key("↑ ..", "cd "+quote(c.Up), "up", true, short(c.Up)))
+		// No arrow in the text. The client draws every other direction itself, at
+		// one stroke weight, and a font's arrow beside those looks like it wandered
+		// in from another program. The "up" style is the signal; the picture is the
+		// client's business.
+		out = append(out, key("..", "cd "+quote(c.Up), "up", true, short(c.Up)))
 	}
 	for _, dir := range c.Dirs {
 		style := "dir"
@@ -175,7 +209,10 @@ func skillActions(c *Context) []Action {
 		if skill.Origin == "project" {
 			continue
 		}
-		out = append(out, key("/"+skill.Name, "/"+skill.Name+" ", "key", false,
+		// Its own style rather than "key", though it is drawn the same muted way.
+		// "key" means a keystroke to the client now, and a keystroke is filed with
+		// the keyboard — which sent every global skill to the wrong side of the bar.
+		out = append(out, key("/"+skill.Name, "/"+skill.Name+" ", "skill-global", false,
 			"global · "+trim(skill.Desc, 90)))
 	}
 	return out
@@ -186,6 +223,7 @@ func skillActions(c *Context) []Action {
 func runActions(c *Context) []Action {
 	out := []Action{
 		key("claude", "claude", "cmd", true, ""),
+		key("codex", "codex", "cmd", true, ""),
 		key("ls -la", "ls -la", "cmd", true, ""),
 		key("^R", "\x12", "key", false, "history search"),
 	}

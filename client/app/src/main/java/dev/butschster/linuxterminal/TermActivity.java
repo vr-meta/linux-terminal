@@ -170,7 +170,11 @@ public class TermActivity extends Activity implements Terminals.Target {
 
         TermView view = new TermView(this, fontSize);
         TermTab[] holder = new TermTab[1];
-        HostSession session = new HostSession(host, port, new HostSession.Listener() {
+        Server paired = Server.find(this, host, port);
+        HostSession session = new HostSession(host, port,
+                paired == null ? "" : paired.token,
+                paired == null ? "" : paired.fingerprint,
+                new HostSession.Listener() {
             @Override
             public void onTextChanged() {
                 view.onOutput();

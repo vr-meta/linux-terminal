@@ -44,7 +44,8 @@ type ASR struct {
 
 // Config is the server's own settings file.
 type Config struct {
-	ASR ASR `json:"asr"`
+	ASR      ASR      `json:"asr"`
+	Identity Identity `json:"identity,omitempty"`
 }
 
 func configPath() string {

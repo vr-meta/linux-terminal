@@ -256,8 +256,16 @@ public class ServersActivity extends Activity {
         // clickable anyway, so this is a target for the deliberate press, not the
         // only way in. It goes after forget, which puts the destructive control
         // between the name and a button nobody minds hitting by accident.
-        TextView connect = buttons.key("connect", Buttons.COMMAND, "open a terminal here",
-                v -> connect(server));
+        // A machine that has never been paired offers pairing instead of a shell.
+        // Connecting first and asking later would mean the one connection that
+        // establishes trust is the one nobody checked.
+        boolean known = Server.find(this, server.host, server.port) != null
+                && Server.find(this, server.host, server.port).paired();
+        TextView connect = known
+                ? buttons.key("connect", Buttons.COMMAND, "open a terminal here",
+                        v -> connect(server))
+                : buttons.key("pair", Buttons.DESTINATION, "check this machine and take its token",
+                        v -> pair(server));
         LinearLayout.LayoutParams connectParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         connectParams.setMarginStart(air());
@@ -376,6 +384,68 @@ public class ServersActivity extends Activity {
     }
 
     // -------------------------------------------------------------- connecting
+
+    /**
+     * Pairing: read the certificate the machine is presenting, show its
+     * fingerprint, and take the token.
+     *
+     * <p>The fingerprint is shown rather than silently accepted because trusting
+     * the first answer is exactly the moment an attacker wants. It is the same
+     * string the server prints at startup and shows in its console; comparing
+     * them is a two-second act that turns a guess into a fact.
+     */
+    private void pair(Server server) {
+        TextView fingerprint = text("reading the certificate…", Buttons.MUTED, 13);
+        fingerprint.setTypeface(Typeface.MONOSPACE);
+
+        EditText token = new EditText(this);
+        token.setHint("token from the console");
+        token.setTextColor(Buttons.TEXT);
+        token.setHintTextColor(Buttons.MUTED);
+        token.setSingleLine(true);
+        token.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        int pad = buttons.inset() * 2;
+        body.setPadding(pad, pad, pad, 0);
+        body.addView(text(server.address(), Buttons.TEXT, 17));
+        body.addView(fingerprint);
+        body.addView(token);
+
+        // Fetched off the main thread: this opens a socket and completes a
+        // handshake, and doing that on the UI thread is how an app freezes.
+        new Thread(() -> {
+            String read;
+            try {
+                read = Pinned.peekFingerprint(server.host, server.port, 4000);
+            } catch (Exception failure) {
+                read = "";
+            }
+            String shown = read;
+            runOnUiThread(() -> fingerprint.setText(shown.isEmpty()
+                    ? "no answer — is the server running, and is it new enough?"
+                    : shown));
+            pendingFingerprint = shown;
+        }, "pair-peek").start();
+
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Pair with " + server.name)
+                .setView(body)
+                .setPositiveButton("pair", (dialog, which) -> {
+                    if (pendingFingerprint == null || pendingFingerprint.isEmpty()) return;
+                    server.token = token.getText().toString().trim();
+                    server.fingerprint = pendingFingerprint;
+                    Server.remember(this, server);
+                    render();
+                })
+                .setNegativeButton("cancel", null)
+                .show();
+    }
+
+    /** Held between the background read and the button that uses it. */
+    private volatile String pendingFingerprint;
 
     private void connect(Server server) {
         Server.remember(this, server);

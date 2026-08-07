@@ -42,6 +42,7 @@ func (s *Server) serveHTTP(address string) {
 	mux.HandleFunc("/api/state", s.handleState)
 	mux.HandleFunc("/api/close", s.handleClose)
 	mux.HandleFunc("/api/asr", s.handleASR)
+	mux.HandleFunc("/api/pairing", s.handlePairing)
 
 	if !strings.HasPrefix(address, "127.0.0.1:") && !strings.HasPrefix(address, "localhost:") {
 		log.Printf("WARNING: the web console on %s has no authentication and can "+
@@ -96,6 +97,15 @@ func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
 		"os":       osRelease(),
 		"uptime":   int(time.Since(s.Started).Seconds()),
 		"sessions": sessions,
+		// The token in full, because this console is bound to localhost and a
+		// pairing secret you cannot read is a pairing secret you cannot use. The
+		// fingerprint beside it is what makes pairing a comparison rather than an
+		// act of faith — the headset shows the same string.
+		"pairing": map[string]any{
+			"token":       s.Identity.Token,
+			"fingerprint": s.Identity.Fingerprint(),
+			"plain":       *flagAllowPlain,
+		},
 		"asr": map[string]any{
 			"configured": s.ASR.configured(),
 			"url":        s.ASR.URL,
@@ -151,12 +161,35 @@ func (s *Server) handleASR(w http.ResponseWriter, r *http.Request) {
 		s.ASR.Model = defaultModel
 	}
 
-	if err := saveConfig(Config{ASR: s.ASR}); err != nil {
+	// The identity rides along: saving dictation settings must not be the thing
+	// that erases the certificate this machine is known by.
+	if err := saveConfig(Config{ASR: s.ASR, Identity: s.Identity}); err != nil {
 		writeJSON(w, map[string]any{"saved": false, "error": err.Error()})
 		return
 	}
 	log.Printf("dictation now via %s (%s)", hostOf(s.ASR.URL), s.ASR.Model)
 	writeJSON(w, map[string]any{"saved": true})
+}
+
+// handlePairing issues a new token, which is how a headset that was lost or lent
+// out stops being able to open a shell.
+//
+// The certificate is deliberately left alone: rotating it would make every
+// paired headset refuse the machine, which is the correct response to a changed
+// identity and the wrong outcome for a token you meant to replace.
+func (s *Server) handlePairing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.Identity.Token = newToken()
+	if err := saveConfig(Config{ASR: s.ASR, Identity: s.Identity}); err != nil {
+		writeJSON(w, map[string]any{"saved": false, "error": err.Error()})
+		return
+	}
+	log.Printf("pairing token replaced — every paired headset must be paired again")
+	writeJSON(w, map[string]any{"saved": true, "token": s.Identity.Token})
 }
 
 // saveConfig writes the settings file with the key in it, so it is 0600 and the

@@ -30,6 +30,22 @@ public class Server {
     /** True when this one answered a probe just now, rather than being remembered. */
     public boolean discovered;
 
+    /**
+     * What was agreed when this machine was paired: the token it wants back, and
+     * the certificate it was known by.
+     *
+     * <p>The fingerprint is the identity. A self-signed certificate proves nothing
+     * on its own — what makes it this machine rather than whoever answered first
+     * is that we wrote it down once and refuse anything else afterwards. Empty
+     * means never paired, and pairing is the only thing that fills it.
+     */
+    public String token = "";
+    public String fingerprint = "";
+
+    public boolean paired() {
+        return !token.isEmpty() && !fingerprint.isEmpty();
+    }
+
     public Server(String name, String host, int port) {
         this.name = name == null || name.isEmpty() ? host : name;
         this.host = host;
@@ -68,6 +84,8 @@ public class Server {
                 JSONObject entry = array.getJSONObject(i);
                 Server server = new Server(entry.optString("name"), entry.optString("host"),
                         entry.optInt("port", 9103));
+                server.token = entry.optString("token", "");
+                server.fingerprint = entry.optString("fingerprint", "");
                 servers.add(server);
             }
         } catch (Exception ignored) {
@@ -83,6 +101,8 @@ public class Server {
                 entry.put("name", server.name);
                 entry.put("host", server.host);
                 entry.put("port", server.port);
+                entry.put("token", server.token);
+                entry.put("fingerprint", server.fingerprint);
                 array.put(entry);
             } catch (Exception ignored) {
             }
@@ -96,12 +116,25 @@ public class Server {
         for (Server known : servers) {
             if (known.host.equals(server.host) && known.port == server.port) {
                 known.name = server.name;
+                // Only ever filled in, never blanked: a rediscovery of a machine
+                // carries no token, and letting that overwrite what pairing agreed
+                // would silently unpair every server the moment it was seen again.
+                if (!server.token.isEmpty()) known.token = server.token;
+                if (!server.fingerprint.isEmpty()) known.fingerprint = server.fingerprint;
                 save(context, servers);
                 return;
             }
         }
         servers.add(server);
         save(context, servers);
+    }
+
+    /** What was agreed with this machine, if it was ever paired. */
+    public static Server find(Context context, String host, int port) {
+        for (Server known : saved(context)) {
+            if (known.host.equals(host) && known.port == port) return known;
+        }
+        return null;
     }
 
     public static void forget(Context context, Server server) {

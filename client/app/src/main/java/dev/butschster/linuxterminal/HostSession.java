@@ -39,6 +39,7 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
     static final int MSG_RESIZE = 0x02;
     static final int MSG_REQUEST = 0x03;
     static final int MSG_AUDIO = 0x04;
+    static final int MSG_AUTH = 0x05;
     static final int MSG_OUT = 0x81;
     static final int MSG_CONTEXT = 0x82;
     static final int MSG_EXIT = 0x83;
@@ -63,6 +64,10 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
 
     private final String host;
     private final int port;
+
+    /** What pairing agreed. Empty means this machine was never paired. */
+    private final String token;
+    private final String fingerprint;
     private final Listener listener;
     private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -77,9 +82,11 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
 
     private int columns = 80, rows = 24, cellWidth = 10, cellHeight = 20;
 
-    public HostSession(String host, int port, Listener listener) {
+    public HostSession(String host, int port, String token, String fingerprint, Listener listener) {
         this.host = host;
         this.port = port;
+        this.token = token == null ? "" : token;
+        this.fingerprint = fingerprint == null ? "" : fingerprint;
         this.listener = listener;
     }
 
@@ -127,6 +134,22 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
         }
     }
 
+    /**
+     * The first frame on a paired connection. Sent straight down the socket rather
+     * than through the writer thread, because the server allocates no pty until it
+     * has read this and anything queued behind it would arrive too late.
+     */
+    private void sendAuth(Socket connected) throws IOException {
+        byte[] payload = ("{\"token\":\"" + token + "\"}").getBytes(StandardCharsets.UTF_8);
+        OutputStream out = connected.getOutputStream();
+        out.write(MSG_AUTH);
+        out.write(new byte[]{
+                (byte) (payload.length >> 24), (byte) (payload.length >> 16),
+                (byte) (payload.length >> 8), (byte) payload.length});
+        out.write(payload);
+        out.flush();
+    }
+
     // -------------------------------------------------------------- transport
 
     /**
@@ -138,10 +161,22 @@ public class HostSession extends TerminalOutput implements TerminalSessionClient
         while (running) {
             Thread writerThread = null;
             try {
-                Socket s = new Socket();
-                s.connect(new InetSocketAddress(host, port), 4000);
-                s.setTcpNoDelay(true);
+                // Paired machines get a checked, encrypted connection and are sent
+                // the token before anything else. Unpaired ones fall back to the
+                // old plain socket, which is what talking to a server that has not
+                // been upgraded yet looks like — the server logs every one of them.
+                Socket s;
+                if (!fingerprint.isEmpty()) {
+                    s = Pinned.connect(host, port, fingerprint, 4000);
+                } else {
+                    s = new Socket();
+                    s.connect(new InetSocketAddress(host, port), 4000);
+                    s.setTcpNoDelay(true);
+                }
                 socket = s;
+                if (!token.isEmpty()) {
+                    sendAuth(s);
+                }
                 status("connected to " + host, true);
                 if (everConnected) {
                     // A new connection is a new shell; leaving the dead one's screen

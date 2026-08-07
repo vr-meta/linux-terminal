@@ -69,6 +69,12 @@ var (
 	// one here is the library the sibling project has used all along without
 	// ever doing that.
 	flagTray = flag.Bool("tray", false, "show an icon in the desktop tray")
+
+	// A migration rather than a setting. Removing it is the point; it exists so
+	// that upgrading the server does not silently strand a headset running the
+	// previous client. See docs/security.md.
+	flagAllowPlain = flag.Bool("allow-plain", true,
+		"also accept unencrypted, unauthenticated connections (going away)")
 )
 
 func main() {
@@ -111,7 +117,7 @@ func main() {
 	config := loadConfig()
 	server := &Server{
 		Shell: shell, Cwd: cwd, Name: name, Port: *flagPort, HTTPPort: *flagHTTP,
-		Quiet: *flagQuiet, ASR: config.ASR, Started: time.Now(),
+		Quiet: *flagQuiet, ASR: config.ASR, Identity: config.Identity, Started: time.Now(),
 	}
 
 	if server.ASR.configured() {
@@ -132,6 +138,27 @@ func main() {
 	}
 	log.Printf("%s %s on %s, shells start in %s (%s)", name, version, address, cwd, shell)
 
+	// The machine's own identity, made once and then left alone. Generating it
+	// here rather than lazily means the console and the tray can show the
+	// fingerprint from the moment the server is up.
+	if changed, err := ensureIdentity(&server.Identity, name); err != nil {
+		log.Fatalf("cannot create this machine's certificate: %v", err)
+	} else if changed {
+		if err := saveConfig(Config{ASR: server.ASR, Identity: server.Identity}); err != nil {
+			log.Fatalf("cannot save the certificate: %v", err)
+		}
+		log.Printf("made this machine an identity — pair a headset with the token in the console")
+	}
+
+	tlsSettings, err := server.Identity.tlsConfig()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+	log.Printf("fingerprint %s", server.Identity.Fingerprint())
+	if *flagAllowPlain {
+		log.Printf("accepting unencrypted clients as well — see docs/security.md")
+	}
+
 	accept := func() {
 		for {
 			conn, err := listener.Accept()
@@ -142,7 +169,7 @@ func main() {
 			if tcp, ok := conn.(*net.TCPConn); ok {
 				tcp.SetNoDelay(true)
 			}
-			go server.serveSession(conn)
+			go server.greet(conn, tlsSettings)
 		}
 	}
 
@@ -169,6 +196,7 @@ type Server struct {
 	HTTPPort int
 	Quiet    bool
 	ASR      ASR
+	Identity Identity
 	Started  time.Time
 
 	mu       sync.Mutex

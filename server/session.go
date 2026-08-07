@@ -25,6 +25,7 @@ const (
 	msgResize  = 0x02 // client -> server: {"cols":N,"rows":N}
 	msgRequest = 0x03 // client -> server: {"op":...}
 	msgAudio   = 0x04 // client -> server: 4-byte JSON length, JSON header, then PCM
+	msgAuth    = 0x05 // client -> server: {"token":"..."} — first frame, before anything
 	msgOut     = 0x81 // server -> client: raw bytes from the pty
 	msgContext = 0x82 // server -> client: context JSON
 	msgExit    = 0x83 // server -> client: {"code":N}

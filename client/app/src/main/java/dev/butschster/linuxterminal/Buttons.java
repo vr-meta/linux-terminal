@@ -89,6 +89,17 @@ public class Buttons {
     }
 
     /**
+     * The gap beside a destructive control — twice the ordinary one. Next to
+     * another harmless key, a ray that drifts a little lands on a second
+     * harmless key; next to one that forgets a server or wipes a conversation,
+     * the same drift has to land on nothing instead. One number, so a card and
+     * a bar that both need it stay in step.
+     */
+    public int dangerGap() {
+        return dp(gap * 2);
+    }
+
+    /**
      * How far anything sits from the edge of the panel it is in — one number for
      * the whole bar, because an inset that differs between two blocks reads as a
      * misalignment however defensible each half is on its own.

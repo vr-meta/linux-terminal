@@ -1,184 +1,215 @@
 package main
 
 import (
-	_ "embed"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
-	"github.com/slytomcat/systray"
+	"github.com/godbus/dbus/v5"
+	"github.com/godbus/dbus/v5/introspect"
+	"github.com/godbus/dbus/v5/prop"
 )
 
 // An indicator in the desktop's tray, for when the server runs on a machine you
-// are sitting at.
+// are sitting at. The server is otherwise invisible — a user service with no
+// window — and "is it running, and is anyone connected" should not need a
+// terminal to answer.
 //
-// The server is otherwise invisible: a user service with no window, and "is it
-// running, and is anyone connected" is a question that should not need a
-// terminal to answer. The icon answers it by existing; its tooltip and menu
-// answer the rest.
+// This is a StatusNotifierItem spoken directly over D-Bus, and the shape is
+// copied deliberately from a tray app on this same desktop that has run for
+// months without incident. The shape is the whole point:
 //
-// On GNOME this is a StatusNotifierItem over D-Bus, which the Ubuntu
-// AppIndicator extension renders. The library is pure Go, so the binary stays
-// static and CGO stays off — a tray icon is not worth giving that up for.
+//	ONE object, /StatusNotifierItem. NO com.canonical.dbusmenu anywhere.
 //
-// On a machine with no session bus — a VPS, a container, anything headless —
-// there is nothing to attach to, and the server says so once and carries on.
+// The first version used a wrapper library that exported a ten-item menu and
+// emitted LayoutUpdated whenever any of it changed. GNOME answers that signal by
+// re-reading the entire menu, on the one thread its JavaScript runs on, and the
+// desktop froze hard enough to need a reset — four times, including once with
+// the refresh rate fixed, so the rate was never the problem. The working
+// neighbour has no menu at all: Menu points at a path that does not exist and
+// ItemIsMenu is true, which leaves the host nothing to walk.
 //
-// It is OFF BY DEFAULT, and the reason is worth stating. Every SetTitle in this
-// library emits a Dbusmenu LayoutUpdated signal, and GNOME answers that by
-// re-reading the whole menu. The first version of this file refreshed on a
-// two-second timer, touching eight items each time — around four full menu
-// re-reads per second, forever, against a compositor that runs its JavaScript on
-// one thread. The desktop froze hard enough to need a reboot.
+// So there is no menu here, and there is nothing a menu was doing that is now
+// missing. A click opens the console, which already lists the sessions and owns
+// the settings. State the icon can carry on its own goes in the tooltip.
 //
-// So: nothing here is on a timer. The menu is rebuilt only when the set of
-// sessions actually changes, which is a few times an hour.
+// CGO stays off: godbus is pure Go, which is why the binary is still one file.
 
-//go:embed web/tray.png
-var trayIcon []byte
+const (
+	trayPath    = dbus.ObjectPath("/StatusNotifierItem")
+	trayIface   = "org.kde.StatusNotifierItem"
+	watcherName = "org.kde.StatusNotifierWatcher"
+	watcherPath = dbus.ObjectPath("/StatusNotifierWatcher")
 
-// How many connections the menu lists before it stops. A menu is not a console;
-// past a handful of lines it stops being glanceable, and the console is one
-// click away.
-const trayMaxSessions = 6
+	// A themed name rather than pixmap bytes we would have to decode and hand
+	// over. Every icon theme ships this one, and a wrong pixmap is a class of
+	// bug this file is in no position to afford.
+	trayIconName = "utilities-terminal"
+)
 
-func (s *Server) runTray() {
-	systray.Run(s.trayReady, func() {})
+// trayTooltip is the SNI ToolTip type, (sa(iiay)ss): an icon name, pixmaps we
+// do not supply, a title and a body.
+type trayTooltip struct {
+	IconName    string
+	Pixmaps     []trayPixmap
+	Title       string
+	Description string
+}
+
+type trayPixmap struct {
+	Width  int32
+	Height int32
+	Data   []byte
+}
+
+// trayItem answers the clicks. Every one of them opens the console, because
+// every one of them used to open a menu whose only useful entry did that.
+type trayItem struct {
+	server *Server
+}
+
+func (t *trayItem) Activate(x, y int32) *dbus.Error {
+	t.server.openConsole()
+	return nil
+}
+
+func (t *trayItem) SecondaryActivate(x, y int32) *dbus.Error {
+	t.server.openConsole()
+	return nil
+}
+
+func (t *trayItem) ContextMenu(x, y int32) *dbus.Error {
+	t.server.openConsole()
+	return nil
+}
+
+func (t *trayItem) Scroll(delta int32, orientation string) *dbus.Error {
+	return nil
 }
 
 // trayAvailable reports whether there is a desktop to put an icon on. Without
-// this the library waits for a bus that will never answer.
+// this the item waits for a bus that will never answer.
 func trayAvailable() bool {
 	return os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "" &&
 		(os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("DISPLAY") != "")
 }
 
-func (s *Server) trayReady() {
-	systray.SetIcon(trayIcon)
-	systray.SetTitle("")
-	systray.SetTooltip("linux-terminal")
-
-	heading := systray.AddMenuItem(fmt.Sprintf("linux-terminal %s", version), "")
-	heading.Disable()
-	address := systray.AddMenuItem(fmt.Sprintf("%s:%d", s.Name, s.Port), "the address the headset connects to")
-	address.Disable()
-
-	systray.AddSeparator()
-
-	console := systray.AddMenuItem("Open the console", "sessions and dictation settings")
-	if s.HTTPPort == 0 {
-		console.SetTitle("Console is off (--http)")
-		console.Disable()
+// runTray exports the item and, unless this is a self-test, tells the watcher it
+// exists. It returns after that: unlike the library it replaces, nothing here
+// needs to own a goroutine forever.
+func (s *Server) runTray(register bool) error {
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		return fmt.Errorf("session bus: %w", err)
 	}
 
-	systray.AddSeparator()
-
-	// Slots, created once and shown or hidden as sessions come and go. Rebuilding
-	// a menu while it is open is how items end up being clicked after they moved.
-	summary := systray.AddMenuItem("No connections", "")
-	summary.Disable()
-	slots := make([]*systray.MenuItem, trayMaxSessions)
-	for i := range slots {
-		slots[i] = systray.AddMenuItem("", "")
-		slots[i].Disable()
-		slots[i].Hide()
+	item := &trayItem{server: s}
+	if err := conn.Export(item, trayPath, trayIface); err != nil {
+		return fmt.Errorf("export item: %w", err)
 	}
-	more := systray.AddMenuItem("", "")
-	more.Disable()
-	more.Hide()
 
-	systray.AddSeparator()
-	quit := systray.AddMenuItem("Stop the server", "closes every session")
+	tooltip := trayTooltip{
+		IconName:    trayIconName,
+		Title:       "linux-terminal",
+		Description: "nobody connected",
+	}
 
-	go func() {
-		for {
-			select {
-			case <-console.ClickedCh:
-				s.openConsole()
-			case <-quit.ClickedCh:
-				log.Printf("stopped from the tray")
-				systray.Quit()
-				os.Exit(0)
-			}
-		}
-	}()
+	// Menu names a path that is never exported, and ItemIsMenu says the click is
+	// ours to handle. This is exactly what the neighbour that never froze does.
+	table := map[string]map[string]*prop.Prop{
+		trayIface: {
+			"Category":   {Value: "ApplicationStatus", Emit: prop.EmitFalse},
+			"Id":         {Value: "linux-terminal", Emit: prop.EmitFalse},
+			"Title":      {Value: "linux-terminal", Emit: prop.EmitFalse},
+			"Status":     {Value: "Active", Emit: prop.EmitFalse},
+			"IconName":   {Value: trayIconName, Emit: prop.EmitFalse},
+			"ToolTip":    {Value: tooltip, Emit: prop.EmitFalse},
+			"ItemIsMenu": {Value: true, Emit: prop.EmitFalse},
+			"Menu":       {Value: dbus.ObjectPath("/StatusNotifierItem/menu"), Emit: prop.EmitFalse},
+		},
+	}
+	properties, err := prop.Export(conn, trayPath, table)
+	if err != nil {
+		return fmt.Errorf("export properties: %w", err)
+	}
 
-	go s.trayWatch(summary, slots, more)
+	node := &introspect.Node{
+		Name: string(trayPath),
+		Interfaces: []introspect.Interface{
+			introspect.IntrospectData,
+			prop.IntrospectData,
+			{
+				Name:       trayIface,
+				Methods:    introspect.Methods(item),
+				Properties: properties.Introspection(trayIface),
+			},
+		},
+	}
+	if err := conn.Export(introspect.NewIntrospectable(node), trayPath, "org.freedesktop.DBus.Introspectable"); err != nil {
+		return fmt.Errorf("export introspection: %w", err)
+	}
+
+	// The name the watcher is given. The suffix is the convention every host
+	// expects; the pid keeps two servers on one desktop from colliding.
+	name := fmt.Sprintf("org.kde.StatusNotifierItem-%d-1", os.Getpid())
+	reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
+	if err != nil {
+		return fmt.Errorf("request name: %w", err)
+	}
+	if reply != dbus.RequestNameReplyPrimaryOwner {
+		return fmt.Errorf("name %s is taken", name)
+	}
+
+	if !register {
+		log.Printf("tray self-test: %s exported, NOT registered with the watcher", name)
+		log.Printf("inspect it with: busctl --user introspect %s %s", name, trayPath)
+		go s.trayWatch(conn, properties)
+		return nil
+	}
+
+	watcher := conn.Object(watcherName, watcherPath)
+	if call := watcher.Call(watcherName+".RegisterStatusNotifierItem", 0, name); call.Err != nil {
+		return fmt.Errorf("no tray host: %w", call.Err)
+	}
+
+	log.Printf("tray icon registered as %s", name)
+	go s.trayWatch(conn, properties)
+	return nil
 }
 
-// traySignature is what the menu currently says. Comparing it is how the tray
-// stays silent while nothing is happening.
-func traySignature(sessions []*Session) string {
-	parts := make([]string, 0, len(sessions))
-	for _, session := range sessions {
-		parts = append(parts, describe(session))
-	}
-	return strings.Join(parts, "\n")
-}
-
-// trayWatch redraws the menu when, and only when, it would say something
-// different. Polling the session list is free; emitting a D-Bus signal is not.
-func (s *Server) trayWatch(summary *systray.MenuItem, slots []*systray.MenuItem, more *systray.MenuItem) {
-	previous := "\x00"
+// trayWatch keeps the tooltip honest. It emits only when the sentence would
+// read differently — a few times an hour — and it emits NewToolTip, which asks
+// the host to re-read one property, not to walk anything.
+func (s *Server) trayWatch(conn *dbus.Conn, properties *prop.Properties) {
+	previous := ""
 	for {
-		sessions := s.liveSessions()
-		signature := traySignature(sessions)
-		if signature == previous {
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		previous = signature
-
-		switch len(sessions) {
-		case 0:
-			summary.SetTitle("No connections")
-			systray.SetTooltip("linux-terminal — nobody connected")
-		case 1:
-			summary.SetTitle("1 connection")
-			systray.SetTooltip("linux-terminal — 1 connection")
-		default:
-			summary.SetTitle(fmt.Sprintf("%d connections", len(sessions)))
-			systray.SetTooltip(fmt.Sprintf("linux-terminal — %d connections", len(sessions)))
-		}
-
-		for i, slot := range slots {
-			if i >= len(sessions) {
-				slot.Hide()
-				continue
+		description := trayDescription(len(s.liveSessions()))
+		if description != previous {
+			previous = description
+			properties.SetMust(trayIface, "ToolTip", trayTooltip{
+				IconName:    trayIconName,
+				Title:       "linux-terminal",
+				Description: description,
+			})
+			if err := conn.Emit(trayPath, trayIface+".NewToolTip"); err != nil {
+				log.Printf("tray: %v", err)
 			}
-			slot.SetTitle("   " + describe(sessions[i]))
-			slot.Show()
 		}
-		if len(sessions) > len(slots) {
-			more.SetTitle(fmt.Sprintf("   and %d more — see the console", len(sessions)-len(slots)))
-			more.Show()
-		} else {
-			more.Hide()
-		}
-
 		time.Sleep(2 * time.Second)
 	}
 }
 
-// describe is one line about a session: where it is from, where it is, and what
-// it is running. Enough to recognise which of your own windows it is.
-func describe(session *Session) string {
-	host := session.Remote
-	if index := strings.LastIndex(host, ":"); index > 0 {
-		host = host[:index]
+func trayDescription(sessions int) string {
+	switch sessions {
+	case 0:
+		return "nobody connected"
+	case 1:
+		return "1 connection"
+	default:
+		return fmt.Sprintf("%d connections", sessions)
 	}
-	where := short(session.lastCwd)
-	if where == "" {
-		where = "?"
-	}
-	tool := session.lastTool
-	if tool == "" {
-		tool = "shell"
-	}
-	return fmt.Sprintf("%s · %s · %s", host, where, tool)
 }
 
 // openConsole hands the URL to the desktop rather than choosing a browser. On a

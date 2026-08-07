@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A shell prompt: a chevron and a cursor.
+     Everything is kept inside the middle 66 of the 108 canvas, which is the only
+     part an adaptive icon is guaranteed to keep — the launcher may mask, zoom or
+     parallax the rest, and a mark drawn to the edges loses its ends to that. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M40,42 L54,54 L40,66"
+        android:strokeColor="#E0E2E8"
+        android:strokeWidth="7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M60,63 h11"
+        android:strokeColor="#E0E2E8"
+        android:strokeWidth="7"
+        android:strokeLineCap="round" />
+</vector>

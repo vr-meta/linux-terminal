@@ -171,13 +171,24 @@ func (s *Session) sendJSON(kind byte, value any) {
 
 // ------------------------------------------------------------------- the loop
 
+// run ends when either half does, and that symmetry is the whole point.
+//
+// An earlier version read the client on this goroutine and then waited for the
+// shell, which deadlocked in both directions. Client disconnects: the wait never
+// returns, because the pty is closed by a defer that cannot run until the wait
+// does, so the shell sits on a terminal nobody will hang up — one orphaned bash
+// per disconnect, forever. Shell exits: the exit frame is never sent, because
+// this goroutine is still blocked reading a client that has nothing more to
+// say, so typing `exit` in the headset left the tab open.
 func (s *Session) run() {
 	done := make(chan struct{})
+	defer close(done)
 
 	// The pty is read on its own goroutine: a read blocks until the shell says
 	// something, which may be minutes.
+	ptyGone := make(chan struct{})
 	go func() {
-		defer close(done)
+		defer close(ptyGone)
 		buffer := make([]byte, 65536)
 		for {
 			n, err := s.ptmx.Read(buffer)
@@ -194,17 +205,60 @@ func (s *Session) run() {
 
 	go s.pollContext(done)
 
-	if err := s.readClient(); err != nil && err != io.EOF {
-		log.Printf("client gone: %v", err)
+	clientGone := make(chan struct{})
+	go func() {
+		defer close(clientGone)
+		if err := s.readClient(); err != nil && err != io.EOF {
+			log.Printf("client gone: %v", err)
+		}
+	}()
+
+	select {
+	case <-ptyGone:
+	case <-clientGone:
 	}
 
-	code := 0
-	if s.cmd != nil {
-		if state, err := s.cmd.Process.Wait(); err == nil {
-			code = state.ExitCode()
-		}
+	s.sendJSON(msgExit, map[string]int{"code": s.reap()})
+}
+
+// reap hangs the shell up and collects what it exited with.
+//
+// Closing the pty is what does the work: the slave side goes away and the
+// foreground group gets SIGHUP. A shell that ignores it gets a blunter request
+// two seconds later, because a session that cannot be ended is a process that
+// outlives every headset that ever connected to it.
+func (s *Session) reap() int {
+	if s.cmd == nil || s.cmd.Process == nil {
+		return 0
 	}
-	s.sendJSON(msgExit, map[string]int{"code": code})
+	if s.ptmx != nil {
+		_ = s.ptmx.Close()
+	}
+
+	finished := make(chan int, 1)
+	go func() {
+		state, err := s.cmd.Process.Wait()
+		if err != nil {
+			finished <- 0
+			return
+		}
+		finished <- state.ExitCode()
+	}()
+
+	select {
+	case code := <-finished:
+		return code
+	case <-time.After(2 * time.Second):
+		_ = s.cmd.Process.Kill()
+	}
+
+	select {
+	case code := <-finished:
+		return code
+	case <-time.After(time.Second):
+		log.Printf("session %d: the shell outlived even SIGKILL", s.ID)
+		return -1
+	}
 }
 
 func (s *Session) readClient() error {

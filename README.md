@@ -2,29 +2,55 @@
 
 # linux-terminal
 
-A Linux shell in a VR headset, as **text** rather than as video.
+A terminal for Linux that lives in a VR headset. A **server** you install on any
+machine you own, a **client** in the Quest that connects to it, and a control bar
+you can drive with your voice.
 
-The usual way to reach a desktop from a Quest is to capture the screen, compress
-it with H.264 and show the result on a panel. For a terminal that is a strange
-thing to do: the shell produces text, and every step of encoding, sending and
-scaling it can only make that text worse. Here the bytes are sent as bytes and
-the headset draws the glyphs itself, at the panel's own resolution.
+## What it is for
+
+Coding agents changed what a terminal session is. With Claude Code, Codex or
+anything like them in front of you, most of the time you are not typing code —
+you are reading what the agent did and saying what to do next. That is
+supervision, and supervision does not need a desk.
+
+So the terminal moves. The server runs wherever the code is: the machine under
+the desk, a box in a datacentre, a VPS you keep for exactly this. The headset
+connects to whichever one you pick and gives you as many terminal windows as you
+want, at any size, from the sofa. You speak, the text lands at the cursor, the
+agent works, and the buttons in front of you change to whatever that agent needs
+right now.
+
+That is the whole idea: **vibe-coding from the couch**, with a real shell on a
+real machine at the other end.
+
+Two consequences worth stating plainly. It is a **client-server** product, not a
+companion to one particular desktop — several machines, listed side by side,
+each a press away. And it sends **text**, not video: a terminal over a phone
+tether or from another city works the same as one on the LAN.
+
+## Why not simply stream the desktop
+
+You can, and the [other repository](https://github.com/butschster/linux-vr) does
+exactly that. But for a terminal it is a strange thing to do: the shell produces
+text, and rasterising it, compressing it with H.264, sending it and scaling it
+back can only make that text worse. Here the bytes are sent as bytes and the
+headset draws the glyphs itself, at the panel's own resolution.
 
 | | Streamed desktop | This |
 |---|---|---|
 | Text sharpness | limited by encode, scale and optics | limited by optics alone |
 | Bandwidth | ~2 Mbit/s idle, tens under motion | bytes per keystroke |
 | Latency | capture + encode + network + decode | network only |
-| Works over a tether, or from another city | no | yes |
-
-Two halves: a **server** on the Linux machine, and a **client** in the headset.
+| Over a tether, or from another city | no | yes |
+| A browser, a video, a GUI | yes | no — that is what the other one is for |
 
 ## What is actually interesting here
 
-**The bar follows what is running.** Under a shell it offers the directory
-above, the directories inside, and the projects you open most often. Start
-`vim` and it becomes `:w`, `:q!`, `/`. Start Claude Code and it becomes `Esc`,
-mode cycling, `/compact`, and one button per skill in that project.
+**The bar follows what is running.** At a shell prompt it offers the directory
+above, the directories inside, and the projects you open most often. Start `vim`
+and it becomes `:w`, `:q!`, `/`. Start Claude Code and it becomes mode cycling,
+`1`/`2`/`3` for its permission prompts, `/compact`, and one button per skill in
+that project.
 
 **That is read, not guessed.** A pty has a foreground process group, so the
 server asks the kernel which program is in front and reads `/proc` for the rest.
@@ -33,14 +59,14 @@ wrong is worse than a fixed one: keys that move at the moment you reach for them
 are a hazard, not a convenience.
 
 **The keys that must always be there never move.** Escape, `^C`, `^D`, Tab,
-backspace, `^W`, `^U`, the arrows and Enter live on a fixed half built once and
+backspace, `^W`, `^U`, the arrows and Enter live on a fixed half, built once and
 never rebuilt. The Quest's own keyboard has none of them; without them a
 terminal cannot be used at all.
 
 **Dictation goes straight into the pty.** Speak, and the text lands at the
-cursor without being submitted, so a misheard word is fixed on the line it
-landed on. (Requires a Whisper-compatible endpoint — see
-[`docs/voice.md`](docs/voice.md).)
+cursor without being submitted — a misheard word is fixed on the line it landed
+on, and pressing Enter stays a decision. Needs a Whisper-compatible endpoint;
+see [`docs/voice.md`](docs/voice.md).
 
 ## Install the server
 
@@ -50,20 +76,21 @@ cd linux-terminal
 ./install.sh
 ```
 
-That builds a static Go binary, puts it in `/usr/local/bin`, and starts it as a
-**systemd user service** — a user service on purpose: the shells it opens are
-yours, and they inherit your environment, your PATH and your `~/.bashrc`.
+That builds a static Go binary, installs it to `/usr/local/bin`, and starts it
+as a **systemd user service** — a user service on purpose: the shells it opens
+are yours, and they inherit your environment, your PATH and your `~/.bashrc`.
 
-Needs Go and nothing else. `PREFIX=~/.local ./install.sh` avoids `sudo`
+Go is the only requirement. `PREFIX=~/.local ./install.sh` avoids `sudo`
 entirely; `./install.sh --no-service` just leaves you the binary.
-
-Or without the script:
 
 ```sh
 make server          # server/linux-terminal-server
 make install         # binary + service
 make run             # in this terminal, no service
 ```
+
+Install it on every machine you want to reach. They all announce themselves the
+same way.
 
 ## Install the client
 
@@ -79,14 +106,15 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Needs JDK 21 and Android SDK 34; put `sdk.dir=` in `client/local.properties`.
+Sideloaded apps live under **Unknown Sources** in the Quest's app library.
 
 ## Using it
 
-Open **linux terminal** in the headset. Machines on the same network appear by
-themselves — the server answers a UDP probe on port 9103. A machine somewhere
-else is typed in once by address and remembered.
+Open **linux terminal**. Machines on the same network appear by themselves — the
+server answers a UDP probe on port 9103. A machine somewhere else is typed in
+once by address and remembered.
 
-Pick one, and you get a terminal window with tabs and a bar window beside it.
+Pick one and you get a terminal window with tabs, and a bar window beside it.
 Both are ordinary Horizon OS windows: the shell places them, resizes them, and
 lets them sit next to a browser or anything else.
 
@@ -94,9 +122,10 @@ lets them sit next to a browser or anything else.
 |---|---|
 | new tab, in the current directory | `+` on the tab strip |
 | close a tab | `×` on the tab itself |
-| a second machine | pick another server; it opens its own window |
+| bring the bar back | `bar` on the tab strip |
+| another machine | pick another server; it opens its own window |
 | text size | `A−` / `A+` on the bar |
-| the on-screen keyboard | the keyboard button on the bar |
+| the on-screen keyboard | the keyboard button |
 | dictation | the microphone button |
 
 ## How it is put together
@@ -122,19 +151,19 @@ Protocol, layout and the reasoning behind both:
 
 Readability in a headset is governed by the **angular size of a glyph**, not by
 pixel density. Measured on this hardware, comfort begins at about **0.39° per
-glyph** — the derivation and the numbers are in
-[`docs/readability.md`](docs/readability.md), and the client's defaults come
-from it.
+glyph** — the derivation is in [`docs/readability.md`](docs/readability.md), and
+the client's defaults come from it.
 
 ## Where this came from
 
 It grew out of [linux-vr](https://github.com/butschster/linux-vr), a VR desktop
 that streams Ubuntu into the headset as video. The terminal turned out to be a
 different product with a different shape — a client and a server, not a screen —
-so it lives here. The streamed desktop stays there.
+so it lives here. The streamed desktop stays there, and the two are good at
+different things.
 
 ## Licence
 
-MIT, except `client/app/src/main/java/com/termux/`, which is vendored from
+MIT, except `client/app/src/main/java/com/termux/`, vendored from
 [termux/termux-app](https://github.com/termux/termux-app) under Apache 2.0. See
 [`client/app/NOTICE.md`](client/app/NOTICE.md) for what was changed and why.

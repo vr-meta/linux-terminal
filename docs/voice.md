@@ -108,3 +108,36 @@ response, and it is not put into a log either.
 A **moving meter** and no text means audio reached the endpoint and came back
 empty. A **flat meter** means the microphone never delivered samples — check the
 runtime permission.
+
+## Running Whisper on your own machine
+
+Nothing has to leave the building. `whisper.cpp` serves an OpenAI-shaped
+endpoint, and the server cannot tell the difference — the same multipart `file`,
+`model` and `response_format=text` go to either.
+
+```sh
+git clone --depth 1 https://github.com/ggml-org/whisper.cpp ~/.local/src/whisper.cpp
+cd ~/.local/src/whisper.cpp
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_SERVER=ON
+cmake --build build -j --target whisper-server
+bash ./models/download-ggml-model.sh small
+./build/bin/whisper-server -m models/ggml-small.bin --host 127.0.0.1 --port 9105 -t 8
+```
+
+Then pick **Self-hosted** in the console and give it `http://127.0.0.1:9105/inference`.
+No key: the endpoint has none, which is also why it is bound to localhost.
+
+**Measured on a Ryzen 7 6800U, CPU only, `small`**: an 11-second clip comes back
+in 2.3 s posted directly, 7.1 s through a session end to end. The GPU is
+deliberately not used — on this hardware the display stack is fragile enough
+without handing it inference as well.
+
+`small` rather than `base` because dictation is mostly Russian and the
+difference is audible. `medium` is not worth it on CPU.
+
+**A language hint that fights the audio is expensive**, not just inaccurate: the
+same English clip took 2.3 s with `en` and over 45 s with `ru`. Set the hint to
+the language you actually speak, and leave it empty if you switch.
+
+To keep it after a reboot, a user service — `packaging/whisper-server.service`
+is the one this was written against.

@@ -1,0 +1,17 @@
+[Unit]
+Description=whisper.cpp — local speech to text for linux-terminal
+Documentation=https://github.com/ggml-org/whisper.cpp
+After=default.target
+
+[Service]
+# Bound to localhost on purpose. This endpoint takes audio and needs no
+# authentication; the only thing keeping it private is that nothing outside this
+# machine can reach it. linux-terminal posts to it from the same host.
+ExecStart=%h/.local/src/whisper.cpp/build/bin/whisper-server \
+  --model %h/.local/src/whisper.cpp/models/ggml-small.bin \
+  --host 127.0.0.1 --port 9105 --threads 8
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

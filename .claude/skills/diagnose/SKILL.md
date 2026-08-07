@@ -119,6 +119,24 @@ deliberately not a login shell (on a pty, bash is interactive already and reads
 `.bashrc`), and it drops `CLAUDECODE` and `CLAUDE_CODE_*` so a `claude` started
 in the headset is not a child of whatever session launched the server.
 
+## The whole desktop froze
+
+If it happened while the server was running with `--tray`, that is the first
+suspect and there is history: a menu refreshed on a timer emits a D-Bus signal
+per item, GNOME re-reads the entire menu for each one, and its JavaScript runs
+on a single thread. Stop the server by pid and the shell usually recovers
+without a reboot.
+
+The tray is off by default for this reason. Before blaming it again, take a
+baseline — indicator errors in the journal are frequently somebody else's:
+
+```sh
+# with the server NOT running, for 30 seconds
+timeout 30 journalctl --user -f -n0 | grep -c PropertyNotFound
+```
+
+On this machine that is 2 per 30s from other indicators, with our server dead.
+
 ## No tray icon
 
 Only appears where there is a desktop session. The server needs

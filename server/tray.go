@@ -26,6 +26,16 @@ import (
 //
 // On a machine with no session bus — a VPS, a container, anything headless —
 // there is nothing to attach to, and the server says so once and carries on.
+//
+// It is OFF BY DEFAULT, and the reason is worth stating. Every SetTitle in this
+// library emits a Dbusmenu LayoutUpdated signal, and GNOME answers that by
+// re-reading the whole menu. The first version of this file refreshed on a
+// two-second timer, touching eight items each time — around four full menu
+// re-reads per second, forever, against a compositor that runs its JavaScript on
+// one thread. The desktop froze hard enough to need a reboot.
+//
+// So: nothing here is on a timer. The menu is rebuilt only when the set of
+// sessions actually changes, which is a few times an hour.
 
 //go:embed web/tray.png
 var trayIcon []byte
@@ -96,12 +106,31 @@ func (s *Server) trayReady() {
 		}
 	}()
 
-	go s.trayRefresh(summary, slots, more)
+	go s.trayWatch(summary, slots, more)
 }
 
-func (s *Server) trayRefresh(summary *systray.MenuItem, slots []*systray.MenuItem, more *systray.MenuItem) {
+// traySignature is what the menu currently says. Comparing it is how the tray
+// stays silent while nothing is happening.
+func traySignature(sessions []*Session) string {
+	parts := make([]string, 0, len(sessions))
+	for _, session := range sessions {
+		parts = append(parts, describe(session))
+	}
+	return strings.Join(parts, "\n")
+}
+
+// trayWatch redraws the menu when, and only when, it would say something
+// different. Polling the session list is free; emitting a D-Bus signal is not.
+func (s *Server) trayWatch(summary *systray.MenuItem, slots []*systray.MenuItem, more *systray.MenuItem) {
+	previous := "\x00"
 	for {
 		sessions := s.liveSessions()
+		signature := traySignature(sessions)
+		if signature == previous {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		previous = signature
 
 		switch len(sessions) {
 		case 0:

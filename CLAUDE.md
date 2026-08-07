@@ -167,6 +167,22 @@ floods it in seconds. Capture live by tag, started **before** launching:
 adb logcat -c && adb logcat -s linux-terminal > log.txt &
 ```
 
+**A tray menu on a timer freezes GNOME.** Every `SetTitle` in the systray
+library emits a Dbusmenu `LayoutUpdated`, and GNOME answers each one by
+re-reading the whole menu over D-Bus, on the one thread its JavaScript runs on.
+The first version of `tray.go` refreshed eight items every two seconds — about
+four full menu re-reads per second, forever. The desktop froze hard enough to
+need a reboot.
+
+The tray is now **off by default** and its menu is edge-triggered: it redraws
+only when the set of sessions would actually read differently. Do not put
+anything on a timer that emits a D-Bus signal.
+
+While chasing this, `PropertyNotFound` errors from `ubuntu-appindicators` in the
+journal look damning and are **not ours** — they appear every 15 seconds with
+our server not running at all. Measure the baseline before blaming your own
+code.
+
 **Signal dispositions survive `exec`.** An earlier server set `SIGCHLD` to
 `SIG_IGN` to avoid zombies; every descendant that reaps its own children then
 got `ECHILD` from `waitpid`, and Claude Code's hooks failed with exactly that.

@@ -64,9 +64,12 @@ var (
 	flagHTTP     = flag.Int("http", 0, "serve the web console on this port (0 disables it)")
 	flagHTTPBind = flag.String("http-bind", "127.0.0.1", "address the web console listens on")
 
-	// On a machine you sit at, the server is otherwise invisible. On a headless
-	// one there is no bus to attach to and this quietly does nothing.
-	flagTray = flag.Bool("tray", true, "show an icon in the desktop tray, when there is one")
+	// Off by default, and that is not caution for its own sake: an earlier
+	// version of the tray refreshed its menu on a timer, which GNOME answers by
+	// re-reading the whole menu, and the desktop froze hard enough to need a
+	// reboot. The refresh is fixed; the default stays off until it has been run
+	// for a while without incident.
+	flagTray = flag.Bool("tray", false, "show an icon in the desktop tray (experimental)")
 )
 
 func main() {

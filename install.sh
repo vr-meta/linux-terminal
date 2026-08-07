@@ -92,7 +92,7 @@ echo
 echo "  The headset should find this machine on its own — it answers discovery"
 echo "  probes on udp/9103. If it does not appear, add it by address:"
 echo
-echo "      ${address:-<this machine's IP>}:9103"
+echo "      ${address:-<the IP of this machine>}:9103"
 echo
 echo "  Dictation needs a transcription endpoint. Set it in the web console:"
 echo

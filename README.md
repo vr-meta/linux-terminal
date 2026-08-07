@@ -70,10 +70,12 @@ key on a device you carry into other people's houses; on the server it sits in a
 file only your account can read. Point it at OpenAI with a key, or at a Whisper
 you run yourself — the difference is a URL. See [`docs/voice.md`](docs/voice.md).
 
-**It puts an icon in the tray** on a machine you sit at: whether it is running,
-how many headsets are connected and what each of them is doing, and a click
-through to the console. On a headless box there is no session bus to attach to,
-it says so once and carries on. Pure Go over D-Bus, so the binary stays static.
+**It can put an icon in the tray** on a machine you sit at — `--tray` — showing
+how many headsets are connected and what each is doing, with a click through to
+the console. Experimental and off by default: an earlier version refreshed its
+menu on a timer, which GNOME answers by re-reading the whole menu, and that
+froze the desktop. The refresh is edge-triggered now, but the default stays off
+until it has run for a while without incident.
 
 **The server has a small web console.** It runs otherwise invisibly as a user
 service, and "is anyone connected, and where does dictation go" should not

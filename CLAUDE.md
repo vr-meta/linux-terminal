@@ -12,9 +12,13 @@ happens in Russian; that does not change what goes into the files.
 ## What this is
 
 A Linux shell in a Quest 3, sent as text rather than as video: a Go **server**
-on the Linux machine and an Android **client** in the headset. A personal tool,
-**not a Horizon Store product** — VRC compliance, entitlement checks and the
-rest of the store scaffolding are out of scope.
+on the Linux machine and an Android **client** in the headset.
+
+It was built as a personal tool and is now **being prepared for the Meta Horizon
+Store**, which changes what is in scope: see [`docs/publishing.md`](docs/publishing.md)
+for what the store actually requires and what we do not have yet. The short
+version is that the artwork is the easy half — a reviewer installs the client,
+finds no server, and sees nothing work at all.
 
 It was split out of [linux-vr](https://github.com/butschster/linux-vr), which
 streams the whole desktop as H.264. That is a different product and stays there.

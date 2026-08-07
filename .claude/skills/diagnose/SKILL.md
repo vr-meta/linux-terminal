@@ -121,14 +121,19 @@ in the headset is not a child of whatever session launched the server.
 
 ## The whole desktop froze
 
-If it happened while the server was running with `--tray`, that is the first
-suspect and there is history: a menu refreshed on a timer emits a D-Bus signal
-per item, GNOME re-reads the entire menu for each one, and its JavaScript runs
-on a single thread. Stop the server by pid and the shell usually recovers
-without a reboot.
+**You do not need to reboot.** Every frozen boot so far shut down cleanly,
+which means the machine was alive under the frozen picture — only the GUI was
+gone. Switch to a text console and you keep the session's work:
 
-The tray is off by default for this reason. Before blaming it again, take a
-baseline — indicator errors in the journal are frequently somebody else's:
+```sh
+# Ctrl+Alt+F3, log in, then look while it is still broken:
+ps -o pid,pcpu,etime,stat -C gnome-shell
+journalctl --user -n 50 --no-pager
+```
+
+The tray was blamed for this once and was **not** the cause — the freeze
+recurred with it not running. Before blaming it again, take a baseline;
+indicator errors in the journal are frequently somebody else's:
 
 ```sh
 # with the server NOT running, for 30 seconds

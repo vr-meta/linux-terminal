@@ -167,21 +167,28 @@ floods it in seconds. Capture live by tag, started **before** launching:
 adb logcat -c && adb logcat -s linux-terminal > log.txt &
 ```
 
-**A tray menu on a timer freezes GNOME.** Every `SetTitle` in the systray
-library emits a Dbusmenu `LayoutUpdated`, and GNOME answers each one by
-re-reading the whole menu over D-Bus, on the one thread its JavaScript runs on.
-The first version of `tray.go` refreshed eight items every two seconds — about
-four full menu re-reads per second, forever. The desktop froze hard enough to
-need a reboot.
+**Do not put a D-Bus signal on a timer.** Every `SetTitle` in the systray library
+emits a Dbusmenu `LayoutUpdated`, and GNOME answers each one by re-reading the
+whole menu, on the one thread its JavaScript runs on. The first `tray.go`
+refreshed eight items every two seconds — about four full menu re-reads per
+second, forever. That is wasteful whatever else is true, so the menu is now
+edge-triggered: it redraws only when the session list would read differently.
 
-The tray is now **off by default** and its menu is edge-triggered: it redraws
-only when the set of sessions would actually read differently. Do not put
-anything on a timer that emits a D-Bus signal.
+**It was not the cause of the desktop freezes, though it was blamed for one.**
+The freeze recurred with the tray not running at all. What the investigation
+actually established, and what saved the next person the same day of guessing:
 
-While chasing this, `PropertyNotFound` errors from `ubuntu-appindicators` in the
-journal look damning and are **not ours** — they appear every 15 seconds with
-our server not running at all. Measure the baseline before blaming your own
-code.
+- The kernel logs **nothing** at freeze time, and `/sys/fs/pstore` is empty.
+- All the frozen boots show **clean shutdown markers** — the machine was alive
+  under the frozen picture. It is the GUI that locks, not the system, so the
+  next one needs no reboot: switch to a TTY with `Ctrl+Alt+F3`.
+- `PropertyNotFound` from `ubuntu-appindicators` looks damning and is **not
+  ours** — it fires every 15 seconds with our server dead, from `netbird-ui`
+  and `weekstat-tray`, over optional properties neither implements.
+- Sunshine already has `encoder = vaapi`, and had quit before the last freeze.
+- The Quest is not an MTP device in adb mode, so gvfs never mounts it.
+
+The tray stays off by default until the real cause is known.
 
 **Signal dispositions survive `exec`.** An earlier server set `SIGCHLD` to
 `SIG_IGN` to avoid zombies; every descendant that reaps its own children then

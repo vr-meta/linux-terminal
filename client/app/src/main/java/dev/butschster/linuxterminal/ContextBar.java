@@ -51,14 +51,15 @@ public class ContextBar extends LinearLayout {
     /** Width of the fixed half. Constant, so the keys on it never move. */
     private static final int FIXED_WIDTH_DP = 360;
 
+    /** The app's own strip. One button wide: it is a margin, not a third of the bar. */
+    private static final int STRIP_WIDTH_DP = 64;
+
     private static final int BG = Color.rgb(24, 25, 31);
     private static final int BG_FIXED = Color.rgb(31, 33, 40);
 
     private static final String ICON_MIC = "\ue029";
     private static final String ICON_KEYBOARD = "\ue312";
     private static final String ICON_STOP = "\ue047";
-    private static final String ICON_PAGE_UP = "\ue5d8";
-    private static final String ICON_PAGE_DOWN = "\ue5db";
 
     private final Host host;
     private final Buttons buttons;
@@ -66,6 +67,7 @@ public class ContextBar extends LinearLayout {
     private final TextView where;
     private final TextView what;
     private final FlowLayout dynamic;
+    private final FlowLayout toolKeys;
     private View divider;
 
     private LinearLayout left;
@@ -90,14 +92,18 @@ public class ContextBar extends LinearLayout {
 
         // ---------------------------------------------------------- left: dynamic
 
+        // No horizontal padding here, so a group's rule can run the full width of
+        // the panel and meet the vertical divider the way a ruled sheet does. What
+        // needs breathing room asks for it individually, below.
         left = new LinearLayout(context);
         left.setOrientation(VERTICAL);
-        left.setPadding(buttons.dp(10), buttons.dp(8), buttons.dp(6), buttons.dp(8));
+        left.setPadding(0, buttons.dp(8), 0, buttons.dp(8));
         addView(left, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
         LinearLayout status = new LinearLayout(context);
         status.setOrientation(HORIZONTAL);
         status.setGravity(Gravity.CENTER_VERTICAL);
+        status.setPadding(buttons.dp(10), 0, buttons.dp(6), 0);
         left.addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         // Text only — nothing here is pressable. A status line that can be clicked
@@ -113,7 +119,14 @@ public class ContextBar extends LinearLayout {
         status.addView(what);
 
         dynamic = new FlowLayout(context, buttons.gap());
-        dynamic.setPadding(0, buttons.dp(6), 0, 0);
+        dynamic.setPadding(buttons.inset(), buttons.dp(2), buttons.inset(), 0);
+        // The rules are drawn past this padding, out to the panel's own edges.
+        // Both flags are needed and they are not the same thing: clipToPadding
+        // stops the padded area being cut, clipChildren is what lets a child draw
+        // outside its own bounds at all. With only the first, the rules came up
+        // short at both ends.
+        dynamic.setClipToPadding(false);
+        dynamic.setClipChildren(false);
         ScrollView dynamicScroll = new ScrollView(context);
         dynamicScroll.addView(dynamic, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
@@ -122,37 +135,87 @@ public class ContextBar extends LinearLayout {
         // ---------------------------------------------------------- right: fixed
 
         divider = new View(context);
-        divider.setBackgroundColor(Color.rgb(52, 54, 64));
+        divider.setBackgroundColor(Buttons.RULE);
         addView(divider, new LayoutParams(buttons.dp(1), LayoutParams.MATCH_PARENT));
 
         right = new LinearLayout(context);
         right.setOrientation(VERTICAL);
         right.setBackgroundColor(BG_FIXED);
-        right.setPadding(buttons.dp(6), buttons.dp(8), buttons.dp(6), buttons.dp(8));
+        // No horizontal padding on the panel, for the same reason the left one has
+        // none: a rule that stops short of the edge looks like a mistake. What
+        // needs the inset takes it individually, and then everything below a rule
+        // lines up with everything above it.
+        // Nothing horizontal, so the rules run to the edges; vertically, the inset
+        // less the margin KeyPad's own cells already carry.
+        right.setPadding(0, buttons.inset() - buttons.gap() / 2, 0,
+                buttons.inset() - buttons.gap() / 2);
         addView(right, new LayoutParams(buttons.dp(FIXED_WIDTH_DP), LayoutParams.MATCH_PARENT));
 
         KeyPad pad = new KeyPad(context, buttons, text -> host.onAction(text, false));
+        // Its cells already carry half a gap each side, so this makes up the rest.
+        pad.setPadding(buttons.inset() - buttons.gap() / 2, 0,
+                buttons.inset() - buttons.gap() / 2, 0);
         right.addView(pad, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
+        // The keys the running program adds, under the ones every program has.
+        //
+        // They belong on this side because they are keys: pressing them types
+        // something. Everything on the left is content — where to go, what to run,
+        // which skill — and mixing the two meant "a key" lived in two places, so
+        // the hand could learn neither. The pad above never moves whatever appears
+        // here, which is the part that must not break.
+        // The same rule the groups on the left are divided by, marking where the
+        // keys every program has end and the ones this program added begin.
+        right.addView(new Rule(context, buttons),
+                new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+        // The same inset the keys above it have, so the two blocks share an edge.
+        toolKeys = new FlowLayout(context, buttons.gap());
+        // The same gap below the rule as above it. Two above and eight below is
+        // not a rhythm, it is a rule that has slid into the row underneath.
+        // Its children carry no margins of their own, so it takes the inset whole.
+        toolKeys.setPadding(buttons.inset(), buttons.inset(), buttons.inset(), 0);
+        ScrollView toolScroll = new ScrollView(context);
+        toolScroll.addView(toolKeys, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        right.addView(toolScroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // ------------------------------------------------- far right: the app's own
+
+        // A strip of its own, because these are not keys. Everything to the left of
+        // this line is typed into the shell; nothing here is. Dictation, text size
+        // and scrolling belong to the app, and a user who has learned that boundary
+        // never has to wonder whether a press will reach the program they are in.
+        View stripDivider = new View(context);
+        stripDivider.setBackgroundColor(Buttons.RULE);
+        addView(stripDivider, new LayoutParams(buttons.dp(1), LayoutParams.MATCH_PARENT));
+
         LinearLayout controls = new LinearLayout(context);
-        controls.setOrientation(HORIZONTAL);
-        controls.setPadding(0, buttons.dp(10), 0, 0);
-        right.addView(controls, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        controls.setOrientation(VERTICAL);
+        controls.setBackgroundColor(BG_FIXED);
+        controls.setPadding(buttons.dp(6), buttons.dp(8), buttons.dp(6), buttons.dp(8));
+        addView(controls, new LayoutParams(buttons.dp(STRIP_WIDTH_DP), LayoutParams.MATCH_PARENT));
 
         addControl(controls, buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate()));
         addControl(controls, buttons.icon(ICON_KEYBOARD, Buttons.COMMAND, "on-screen keyboard",
                 v -> host.onKeyboard()));
-        addControl(controls, buttons.key("A\u2212", Buttons.KEY, "smaller text", v -> host.onFontStep(-2)));
-        addControl(controls, buttons.key("A+", Buttons.KEY, "larger text", v -> host.onFontStep(2)));
-        View pageUp = buttons.icon(ICON_PAGE_UP, Buttons.KEY, "scroll back", v -> host.onScroll(-10));
-        buttons.repeatOnHold(pageUp, () -> host.onScroll(-10));
-        addControl(controls, pageUp);
-        View pageDown = buttons.icon(ICON_PAGE_DOWN, Buttons.KEY, "scroll forward", v -> host.onScroll(10));
-        buttons.repeatOnHold(pageDown, () -> host.onScroll(10));
-        addControl(controls, pageDown);
+        // Bigger over smaller, and scroll back over scroll forward: in both the
+        // upper half is the one that moves away from where you are.
+        addControl(controls, buttons.rocker(
+                buttons.half("A+", "larger text", v -> host.onFontStep(2)),
+                buttons.half("A\u2212", "smaller text", v -> host.onFontStep(-2))));
 
-        hint(pad);
-        hint(controls);
+        View pageUp = buttons.glyphHalf(Glyphs.Kind.UP, "scroll back", v -> host.onScroll(-10));
+        buttons.repeatOnHold(pageUp, () -> host.onScroll(-10));
+        View pageDown = buttons.glyphHalf(Glyphs.Kind.DOWN, "scroll forward", v -> host.onScroll(10));
+        buttons.repeatOnHold(pageDown, () -> host.onScroll(10));
+        addControl(controls, buttons.rocker(pageUp, pageDown));
+
+        // Descriptions ride on the buttons themselves. A hint printed somewhere
+        // else — a line under the keys, the path at the top of another panel — is a
+        // hint in the one place the eye is not while it is aiming.
+        hint(pad, null);
+        hint(controls, null);
 
         // ------------------------------------------------- dictation takes over
 
@@ -191,11 +254,11 @@ public class ContextBar extends LinearLayout {
         under.addView(note);
     }
 
-    private void addControl(LinearLayout row, View view) {
-        LayoutParams params = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
+    private void addControl(LinearLayout strip, View view) {
+        LayoutParams params = new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
         int half = buttons.gap() / 2;
-        params.setMargins(half, half, half, half);
-        row.addView(view, params);
+        params.setMargins(0, half, 0, half);
+        strip.addView(view, params);
     }
 
     // ------------------------------------------------------------------ status
@@ -234,28 +297,66 @@ public class ContextBar extends LinearLayout {
         what.setText(right.toString());
 
         dynamic.removeAllViews();
+        toolKeys.removeAllViews();
 
         JSONArray groups = ctx.optJSONArray("groups");
         if (groups == null) return;
+
+        // Keystrokes first, on the keyboard side, whichever group sent them.
+        for (int i = 0; i < groups.length(); i++) {
+            JSONObject group = groups.optJSONObject(i);
+            if (group == null) continue;
+            JSONArray actions = group.optJSONArray("actions");
+            if (actions == null) continue;
+            for (int j = 0; j < actions.length(); j++) {
+                JSONObject action = actions.optJSONObject(j);
+                if (action != null && isKeystroke(action)) toolKeys.addView(actionButton(action));
+            }
+        }
+        hint(toolKeys, null);
         for (int i = 0; i < groups.length(); i++) {
             JSONObject group = groups.optJSONObject(i);
             if (group == null) continue;
             JSONArray actions = group.optJSONArray("actions");
             if (actions == null || actions.length() == 0) continue;
 
-            // Each group starts on its own row. A divider would be worse: wrapping
-            // puts it wherever the row happened to break, which is nowhere useful.
-            TextView heading = label(group.optString("name"), Buttons.MUTED, 14);
-            heading.setPadding(0, buttons.dp(8), buttons.dp(10), 0);
+            // A rule, then the group's name directly under it, then its buttons.
+            //
+            // An earlier version had no rule, for a reason that was true and is now
+            // fixed: an ordinary View measures to nothing in a FlowLayout, so a
+            // divider landed wherever the row happened to wrap. Rule measures itself
+            // to the full available width, which puts it where it belongs and forces
+            // the break as a side effect.
+            dynamic.addView(new Rule(getContext(), buttons));
+
+            // Small, spaced and upper-case, sitting right under its rule: a label
+            // for what follows rather than a line competing with the buttons. The
+            // rule carries the separation, so the heading does not have to.
+            TextView heading = label(group.optString("name").toUpperCase(Locale.ROOT),
+                    Buttons.MUTED, 9);
+            heading.setPadding(0, buttons.dp(1), buttons.dp(10), buttons.dp(1));
+            heading.setLetterSpacing(0.12f);
             heading.setTag(FlowLayout.BREAK);
             dynamic.addView(heading);
 
+            // The heading gets the row to itself. BREAK only says "start a new row",
+            // so without breaking again the first buttons filled the space beside the
+            // name and the heading stopped looking like a heading.
+            boolean startsRow = true;
+
             for (int j = 0; j < actions.length(); j++) {
                 JSONObject action = actions.optJSONObject(j);
-                if (action != null) dynamic.addView(actionButton(action));
+                if (action == null) continue;
+                if (isKeystroke(action)) continue;      // drawn on the other side
+                View button = actionButton(action);
+                if (startsRow) {
+                    button.setTag(FlowLayout.BREAK);
+                    startsRow = false;
+                }
+                dynamic.addView(button);
             }
         }
-        hint(dynamic);
+        hint(dynamic, where);
     }
 
     // -------------------------------------------------------------- dictation
@@ -308,10 +409,52 @@ public class ContextBar extends LinearLayout {
         boolean enter = action.optBoolean("enter");
         String hint = action.isNull("hint") ? null : action.optString("hint");
 
+        String rawStyle = action.optString("style", "key");
+        int style = styleFor(rawStyle);
+
         // A button that runs on press and one that only types look identical
         // otherwise, and the difference is /clear wiping a conversation.
-        return buttons.key(enter ? text + " ⏎" : text, styleFor(action.optString("style", "key")),
-                hint, v -> host.onAction(send, enter));
+        TextView view = buttons.key(text, style, hint, v -> host.onAction(send, enter));
+
+        // Going up is a direction, so it gets the same chevron the arrow keys do,
+        // drawn rather than typed. The server used to put an arrow in the label and
+        // it was the last font glyph left standing next to a drawn set.
+        if ("up".equals(rawStyle)) {
+            view.setCompoundDrawablesWithIntrinsicBounds(
+                    Glyphs.drawable(getContext(), Glyphs.Kind.UP, Buttons.TEXT, buttons.iconSizeDp()),
+                    null, null, null);
+            view.setCompoundDrawablePadding(buttons.dp(6));
+        }
+
+        // The mark is for the exception, not the rule — which is what the tables
+        // actually say. Every "key" types and never runs; every "cmd" but one runs.
+        // So on those the hook repeated what the colour had already said, and a
+        // whole section called RUN wore it on every button.
+        //
+        // "warn" is the one style that is genuinely mixed: `q` in a pager only
+        // types, `/clear` and `:q!` go off the moment they are pressed. There the
+        // mark is the difference between leaving a pager and wiping a conversation,
+        // so there it stays.
+        if (enter && style == Buttons.WARN) {
+            view.setCompoundDrawablesWithIntrinsicBounds(null, null,
+                    Glyphs.drawable(getContext(), Glyphs.Kind.ENTER, Buttons.TEXT,
+                            buttons.iconSizeDp() + 4), null);
+            view.setCompoundDrawablePadding(buttons.dp(7));
+        }
+
+        return view;
+    }
+
+    /**
+     * Whether this button types rather than does. The tables already carry the
+     * distinction and always have: a "key" or a "warn" that does not press Enter is
+     * a keystroke, and everything else — a directory, a command, a skill — is a
+     * thing the bar goes and does.
+     */
+    private static boolean isKeystroke(JSONObject action) {
+        if (action.optBoolean("enter")) return false;
+        String style = action.optString("style", "key");
+        return "key".equals(style) || "warn".equals(style);
     }
 
     private static int styleFor(String style) {
@@ -326,6 +469,10 @@ public class ContextBar extends LinearLayout {
                 return Buttons.COMMAND;
             case "warn":
                 return Buttons.WARN;
+            case "skill-global":
+                // Muted, the way it always was — a skill from elsewhere rather than
+                // from this project. Only its filing changed, not its face.
+                return Buttons.KEY;
             default:
                 return Buttons.KEY;
         }
@@ -339,21 +486,28 @@ public class ContextBar extends LinearLayout {
      * path permanently — the host only pushes context when the directory or the foreground
      * program changes, so it stayed gone until the next `cd`.
      */
-    private void hint(View view) {
+    private void hint(View view, TextView target) {
         if (view instanceof android.view.ViewGroup) {
             android.view.ViewGroup group = (android.view.ViewGroup) view;
-            for (int i = 0; i < group.getChildCount(); i++) hint(group.getChildAt(i));
+            for (int i = 0; i < group.getChildCount(); i++) hint(group.getChildAt(i), target);
             return;
         }
         CharSequence description = view.getContentDescription();
         if (description == null || description.length() == 0) return;
+
+        // Next to the button as well as in the status line. The status line is at
+        // the top of the other panel, so a hint about a key on the right appeared
+        // at the far end of the bar and went unread; a tooltip shows up where the
+        // ray already is.
+        view.setTooltipText(description);
+
         view.setOnHoverListener((v, event) -> {
             switch (event.getActionMasked()) {
                 case android.view.MotionEvent.ACTION_HOVER_ENTER:
-                    where.setText(description);
+                    if (target != null) target.setText(description);
                     break;
                 case android.view.MotionEvent.ACTION_HOVER_EXIT:
-                    where.setText(path);
+                    if (target != null) target.setText(path);
                     break;
                 default:
                     break;

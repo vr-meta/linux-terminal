@@ -124,14 +124,20 @@ jobs:
             ## On the Linux machine
 
             ```sh
-            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/linux-terminal-server-linux-amd64 \
-                -o /usr/local/bin/linux-terminal-server && chmod +x /usr/local/bin/linux-terminal-server
-            linux-terminal-server --http 9104
+            curl -fL https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/linux-terminal-server-linux-amd64 \
+                | sudo tee /usr/local/bin/linux-terminal-server > /dev/null
+            sudo chmod +x /usr/local/bin/linux-terminal-server
+            linux-terminal-server --version
             ```
 
-            No dependencies — it is a static binary. For it to survive a reboot,
-            install it as a service instead: clone the repository and run
-            `./install.sh`.
+            `-f` is not decoration: without it curl writes an HTML error page
+            into the file and you install something that is not a binary. On an
+            ARM box take `-arm64` instead, and `checksums.txt` is published
+            beside them.
+
+            No dependencies — it is a static binary. For it to survive a reboot
+            it wants a service; the `install` skill in the repository does that
+            and the lingering step people forget.
 
             Dictation needs a transcription endpoint; set one at
             `http://localhost:9104`.

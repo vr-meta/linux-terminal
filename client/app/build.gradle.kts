@@ -51,6 +51,28 @@ android {
             signingConfig = signingConfigs.findByName("release")
                 ?: signingConfigs.getByName("debug")
         }
+
+        // A build for wearing, not for shipping: the debug variant's contents —
+        // including the concept screen in src/debug — signed with the release key.
+        //
+        // It exists because Android refuses an update signed by a different key, and
+        // the headset already carries a properly signed install. The alternative was
+        // to uninstall it, which throws away the paired servers and their tokens and
+        // means pairing every machine again to look at a colour.
+        create("concept") {
+            initWith(getByName("debug"))
+            isDebuggable = true
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
+        }
+    }
+
+    sourceSets {
+        // One copy of the concept screen, built into both variants that may show it.
+        getByName("concept") {
+            java.srcDirs("src/debug/java")
+            manifest.srcFile("src/debug/AndroidManifest.xml")
+        }
     }
 
     compileOptions {

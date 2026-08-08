@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug-only additions. Gradle merges this over the main manifest for the debug
+    variant and leaves the release build untouched, so the concept screen is absent
+    from a shipped APK by construction rather than by remembering to remove it.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!-- A launcher entry of its own: the bar it draws is fed a recorded context
+             and drives nothing, so it must not be reachable from the app proper. -->
+        <activity
+            android:name=".GalleryActivity"
+            android:exported="true"
+            android:label="bar concept"
+            android:resizeableActivity="true"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+            <layout
+                android:defaultWidth="1150dp"
+                android:defaultHeight="520dp"
+                android:minWidth="700dp"
+                android:minHeight="360dp"
+                android:gravity="center" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

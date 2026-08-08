@@ -76,9 +76,23 @@ public class ServersActivity extends Activity {
         root.setClipToPadding(false);
         root.setClipChildren(false);
 
+        // The app's own version sits beside the name, not in an about box nobody
+        // opens. It is half of the answer whenever the two halves disagree — the
+        // other half is on each server's card — and a sideloaded app has no store
+        // page to look it up on.
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(Gravity.BOTTOM);
+
         TextView title = text("linux terminal", Buttons.TEXT, 24);
         title.setTypeface(Typeface.MONOSPACE);
-        root.addView(title);
+        heading.addView(title);
+
+        TextView release = text(appVersion(), Buttons.MUTED, 14);
+        release.setPadding(buttons.dp(10), 0, 0, buttons.dp(3));
+        heading.addView(release);
+
+        root.addView(heading);
 
         status = text("looking for servers…", Buttons.MUTED, 15);
         status.setPadding(0, buttons.dp(4), 0, buttons.dp(14));
@@ -342,6 +356,9 @@ public class ServersActivity extends Activity {
         line.append(server.user.isEmpty() ? server.host : server.user + "@" + server.host);
         if (server.port != DEFAULT_PORT) line.append(':').append(server.port);
         if (!server.os.isEmpty()) line.append("   ").append(server.os);
+        // Last, because it is the thing you look for only once something is odd —
+        // and then it is the first thing worth knowing.
+        if (!server.version.isEmpty()) line.append("   ").append(server.build());
         return line.toString();
     }
 
@@ -626,6 +643,21 @@ public class ServersActivity extends Activity {
         // of screen by accident.
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT);
         startActivity(intent);
+    }
+
+    /**
+     * What this app is, asked of the system rather than of a generated constant.
+     *
+     * <p>`BuildConfig` would need the build feature turned on, and the package
+     * manager already knows — it is reading the same `versionName` that decided
+     * whether this install was allowed to replace the last one.
+     */
+    private String appVersion() {
+        try {
+            return "v" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception unavailable) {
+            return "";
+        }
     }
 
     private TextView text(String value, int colour, int sizeDp) {

@@ -58,8 +58,11 @@ public class ContextBar extends LinearLayout {
     private static final int BG_FIXED = Color.rgb(31, 33, 40);
 
     private static final String ICON_MIC = "\ue029";
-    private static final String ICON_KEYBOARD = "\ue312";
     private static final String ICON_STOP = "\ue047";
+
+    // The keyboard mark is shared with the terminal window's button, so it lives in
+    // Buttons rather than here \u2014 see the note there.
+    private static final String ICON_KEYBOARD = Buttons.ICON_KEYBOARD;
 
     /**
      * The only bytes this file sends on its own. Everything else it types came

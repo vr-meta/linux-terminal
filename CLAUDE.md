@@ -41,7 +41,9 @@ docs/         design, measurements, traps — read before changing anything
 |---|---|
 | `server/session.go` | one pty, one client, the framing |
 | `server/context.go` | cwd, foreground process, listings, skills, git |
-| `server/actions.go` | **the button tables** — this is where a new tool is taught |
+| `server/tools/*.yaml` | **the button tables** — one file per program, embedded, overridable per machine |
+| `server/tools.go` | loads those files, validates them, reloads them without a restart |
+| `server/actions.go` | the groups that are computed rather than tabulated: places, projects, skills, run |
 | `server/discovery.go` | the UDP probe answer |
 | `server/asr.go` | speech to text, proxied to whatever endpoint is configured |
 | `server/console.go` + `web/` | the localhost web console: sessions, voice settings |
@@ -57,8 +59,16 @@ docs/         design, measurements, traps — read before changing anything
 
 **The server decides what the bar offers; the client only draws it.** The server
 owns the pty, so it can read the foreground process group rather than guess, and
-it has the filesystem the buttons refer to. A tool is added by editing
-`server/actions.go`, never by rebuilding the APK.
+it has the filesystem the buttons refer to. A tool is added by dropping a file in
+`server/tools/`, never by rebuilding the APK.
+
+**A tool table is data; everything else in the bar is not.** What a program
+offers is a list of label-and-bytes and belongs in YAML. What a *prompt* offers —
+the directories around you, your projects, this checkout's skills, the commands
+this machine can run — is read from the filesystem on every refresh and stays in
+Go. Do not answer a request for "make the bar configurable" by inventing a
+language to express the second half; that is a scripting engine running four
+times a second in the process that holds the pty and the pairing token.
 
 **Detection is read, not guessed.** `TIOCGPGRP` on the pty gives the foreground
 process group; `/proc/<pgid>/cmdline` says what it is. No window titles, no
@@ -176,8 +186,12 @@ sudo udevadm control --reload-rules && sudo udevadm trigger && adb kill-server
 floods it in seconds. Capture live by tag, started **before** launching:
 
 ```sh
-adb logcat -c && adb logcat -s linux-terminal > log.txt &
+adb logcat -c && adb logcat -s linux-terminal linux-vr > log.txt &
 ```
+
+Two tags because the client has two: `HostSession` and `TermView` still log under
+`linux-vr`, inherited from the project this grew out of, and they are the
+connection and the rendering.
 
 **The tray library is the thing that froze this desktop — not the menu.**
 `slytomcat/systray` froze it four times, hard enough to need a reset each time,

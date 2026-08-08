@@ -1,0 +1,14 @@
+# Full-screen programs with a list and a filter — the shape lazygit, htop and
+# their relatives share. Three keys, because a guess that is wrong about the
+# fourth is worse than not offering it.
+#
+# A program here that deserves its own table should get its own file instead: drop
+# lazygit.yaml next to this one, with `match: [lazygit]`, and it stops being a
+# generic TUI.
+
+match: [lazygit, htop, top, btop, cch, cgit]
+
+keys:
+  - {label: "q", send: "q", style: warn, hint: quit}
+  - {label: "/", send: "/", hint: filter}
+  - {label: "r", send: "r", hint: reload}

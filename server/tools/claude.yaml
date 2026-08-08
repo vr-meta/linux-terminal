@@ -1,0 +1,41 @@
+# Claude Code.
+#
+# The keys chosen are the ones a headset cannot press: a chord needs two hands on
+# a keyboard that is not there, and Esc twice in a row is worse than one key with
+# a name. Slash commands earn their place by being the ones reached for mid-flow,
+# not by existing — there are eighty.
+#
+# The first entry is "get out of this program": the button reached for under mild
+# panic, and panic is when position is all you have.
+#
+# Keys every program needs — Esc, Enter, Tab, ^C, ^D, backspace, the arrows — are
+# NOT here. The client owns those and keeps them on a side that context never
+# rebuilds. Duplicating one here would put it in two places, and then neither is
+# the one the hand learns.
+
+match: [claude]
+
+keys:
+  - {label: "⇧Tab",    send: "\e[Z",   hint: cycle permission mode}
+  - {label: "1",       send: "1",      hint: "permission prompt: yes"}
+  - {label: "2",       send: "2",      hint: "permission prompt: yes, don't ask again"}
+  - {label: "3",       send: "3",      hint: "permission prompt: no"}
+  - {label: "Esc Esc", send: "\e\e",   style: warn, hint: clear the draft, or rewind}
+  - {label: "^T",      send: "\x14",   hint: show the task checklist}
+  - {label: "^O",      send: "\x0f",   hint: transcript viewer}
+  - {label: "^B",      send: "\x02",   hint: background the running task}
+  - {label: "^S",      send: "\x13",   hint: stash or restore the prompt}
+  - {label: "/",       send: "/",      hint: commands}
+  - {label: "!",       send: "!",      hint: bash}
+  - {label: "#",       send: "#",      hint: memory}
+
+  - {label: "/plan",    send: "/plan",    style: cmd, enter: true, hint: plan before a large change}
+  - {label: "/rewind",  send: "/rewind",  style: cmd, enter: true, hint: roll code and chat back to a checkpoint}
+  - {label: "/branch",  send: "/branch",  style: cmd, enter: true, hint: branch the conversation to try another way}
+  - {label: "/context", send: "/context", style: cmd, enter: true, hint: what is filling the context}
+  - {label: "/review",  send: "/review",  style: cmd, enter: true, hint: review the diff}
+  - {label: "/verify",  send: "/verify",  style: cmd, enter: true, hint: check the changes actually work}
+  - {label: "/compact", send: "/compact", style: cmd, enter: true, hint: summarise to free context}
+  - {label: "/usage",   send: "/usage",   style: cmd, enter: true, hint: tokens and cost this session}
+  - {label: "/resume",  send: "/resume",  style: cmd, enter: true, hint: return to an earlier conversation}
+  - {label: "/clear",   send: "/clear",   style: warn, enter: true, hint: wipe the conversation}

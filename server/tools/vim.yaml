@@ -1,0 +1,13 @@
+# vim, and whatever answers to vi or nvim.
+
+match: [vim, nvim, vi]
+
+keys:
+  - {label: ":q!", send: ":q!", style: warn, enter: true, hint: quit, discarding changes}
+  - {label: ":w",  send: ":w",  style: cmd,  enter: true, hint: write}
+  - {label: ":wq", send: ":wq", style: cmd,  enter: true, hint: write and quit}
+  - {label: "/",   send: "/",   hint: search}
+  - {label: "u",   send: "u",   hint: undo}
+  - {label: "dd",  send: "dd",  hint: delete a line}
+  - {label: "gg",  send: "gg",  hint: top}
+  - {label: "G",   send: "G",   hint: bottom}

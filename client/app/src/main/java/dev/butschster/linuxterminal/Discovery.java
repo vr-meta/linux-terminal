@@ -110,6 +110,11 @@ public class Discovery {
             // Who, what and where no longer travel in a broadcast answer: the
             // server stopped telling strangers. They are filled in from what was
             // learned over a session, by whoever has the saved list to hand.
+            //
+            // The build number stayed, though. It tells a stranger nothing they
+            // could use, and it is what makes a machine you have never opened
+            // still able to say whether it is older than this app.
+            server.version = json.optString("release", "");
             server.discovered = true;
             return server;
         } catch (Exception e) {

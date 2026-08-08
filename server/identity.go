@@ -165,5 +165,14 @@ func (identity Identity) Fingerprint() string {
 // a measurement anyone can make over a network: a few thousand attempts and the
 // token has been read one character at a time without ever being guessed.
 func (identity Identity) tokenMatches(offered string) bool {
+	// A server with no token must let nobody in, not everybody. The comparison
+	// below says two empty strings are equal — correctly, it is comparing
+	// nothing to nothing — so without this line an identity that never got
+	// generated would accept {"token":""} from anyone who asked. ensureIdentity
+	// makes that unreachable today; it costs one branch to keep it unreachable
+	// when somebody adds a second way to build a Server.
+	if identity.Token == "" {
+		return false
+	}
 	return subtle.ConstantTimeCompare([]byte(identity.Token), []byte(offered)) == 1
 }

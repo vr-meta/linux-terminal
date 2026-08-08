@@ -76,9 +76,14 @@ The Horizon OS compositor floods logcat and evicts everything within seconds.
 Start the capture **before** launching:
 
 ```sh
-adb logcat -c && adb logcat -s linux-terminal AndroidRuntime > /tmp/log.txt &
+adb logcat -c && adb logcat -s linux-terminal linux-vr AndroidRuntime > /tmp/log.txt &
 adb shell am start -n dev.butschster.linuxterminal/.ServersActivity
 ```
+
+**Both tags, and this is not optional.** `HostSession` and `TermView` still log
+under `linux-vr`, inherited from the project this grew out of — so the
+connection and the rendering, which is what a blank terminal is about, are
+invisible when you filter on `linux-terminal` alone.
 
 The client logs its grid on connect: `grid 165x49 font 20px cell 12.0x24`. If
 that line is absent, the view never got a size or the session never connected.

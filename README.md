@@ -175,6 +175,13 @@ sudo ufw allow 9103/tcp && sudo ufw allow 9103/udp
 Install it on every machine you want to reach. They all announce themselves the
 same way.
 
+**The server is Linux-only, and not by oversight.** It reads the foreground
+process group off the pty and the working directory out of `/proc`, and neither
+has an equivalent on Windows — the cross-compile is four errors away from
+building and much further away from working.
+[`docs/windows.md`](docs/windows.md) says exactly what a port would have to
+solve, and what to do meanwhile if the machine you want a shell on runs Windows.
+
 ### Ports, chosen once at startup
 
 ```sh

@@ -89,8 +89,6 @@ public class ContextBar extends LinearLayout {
     private View projectBox;
     private LinearLayout chipColumn;
     private LinearLayout shortcuts;
-    private TextView lastCommand;
-    private TextView selectedName;
 
     private LinearLayout left;
     private LinearLayout right;
@@ -269,9 +267,14 @@ public class ContextBar extends LinearLayout {
         controls.setPadding(buttons.dp(6), buttons.dp(8), buttons.dp(6), buttons.dp(8));
         addView(controls, new LayoutParams(buttons.dp(STRIP_WIDTH_DP), LayoutParams.MATCH_PARENT));
 
-        addControl(controls, buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate()));
-        addControl(controls, buttons.icon(ICON_KEYBOARD, Buttons.COMMAND, "on-screen keyboard",
-                v -> host.onKeyboard()));
+        // Dictation and the keyboard as one block on every skin, not only on the
+        // console one. They answer the same question — how does text get into the
+        // line — and a cluster says so without implying, as a rocker would, that
+        // one is a direction of the other.
+        addControl(controls, buttons.cluster(true,
+                buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate()),
+                buttons.icon(ICON_KEYBOARD, Buttons.COMMAND, "on-screen keyboard",
+                        v -> host.onKeyboard())));
         // Up over down, everywhere on this strip: in every rocker here the upper
         // half is the one that moves away from where you are.
         //
@@ -508,6 +511,13 @@ public class ContextBar extends LinearLayout {
         head.setGravity(Gravity.CENTER_VERTICAL);
         head.setBackground(buttons.display());
         head.setPadding(buttons.dp(14), buttons.dp(10), buttons.dp(14), buttons.dp(10));
+        // The header is a screen, so it is written by the same beam as the screens
+        // under it. It was inheriting the panel's neutral text and dim grey from
+        // the constructor, which put two colours behind one piece of glass — the
+        // exact fault fixed once already for the typeface, arriving again through
+        // the palette.
+        where.setTextColor(Buttons.skin().phosphor);
+        what.setTextColor(Buttons.skin().phosphorDim);
         head.addView(where, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
         head.addView(what);
         head.addView(new Led(context, Buttons.skin().accentGo, true),
@@ -544,9 +554,6 @@ public class ContextBar extends LinearLayout {
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         commandBox.addView(chipScroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
         addSection(reading, commandBox, 1f);
-
-        reading.addView(consoleMinis(context), new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         addView(gap(context, 12), new LayoutParams(buttons.dp(12), LayoutParams.MATCH_PARENT));
 
@@ -624,57 +631,6 @@ public class ContextBar extends LinearLayout {
         return scroll;
     }
 
-    private View consoleMinis(Context context) {
-        LinearLayout strip = new LinearLayout(context);
-        strip.setOrientation(HORIZONTAL);
-        lastCommand = miniValue(context);
-        selectedName = miniValue(context);
-        strip.addView(mini(context, "last command", lastCommand, "ready",
-                Buttons.skin().accentGo), miniParams());
-        strip.addView(gap(context, 10));
-        strip.addView(mini(context, "selected", selectedName, "—",
-                Buttons.skin().accentWarn), miniParams());
-        return strip;
-    }
-
-    private LayoutParams miniParams() {
-        return new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
-    }
-
-    private TextView miniValue(Context context) {
-        TextView view = label("—", Buttons.skin().phosphor, 13);
-        view.setTypeface(Fonts.mono(context));
-        view.setSingleLine(true);
-        view.setEllipsize(TextUtils.TruncateAt.END);
-        return view;
-    }
-
-    private View mini(Context context, String caption, TextView value, String sub, int lamp) {
-        LinearLayout box = new LinearLayout(context);
-        box.setOrientation(VERTICAL);
-        box.setBackground(buttons.display());
-        box.setPadding(buttons.dp(10), buttons.dp(8), buttons.dp(10), buttons.dp(8));
-
-        TextView label = label(caption.toUpperCase(Locale.ROOT), 0xFF1F7B41, 9);
-        label.setLetterSpacing(0.18f);
-        box.addView(label);
-        box.addView(value);
-
-        LinearLayout footer = new LinearLayout(context);
-        footer.setOrientation(HORIZONTAL);
-        footer.setGravity(Gravity.CENTER_VERTICAL);
-        footer.addView(new Led(context, lamp, true),
-                new LayoutParams(buttons.dp(9), buttons.dp(9)));
-        TextView note = label(sub, Buttons.skin().phosphorDim, 10);
-        note.setTypeface(Typeface.MONOSPACE);
-        LayoutParams noteParams = new LayoutParams(
-                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
-        noteParams.setMarginStart(buttons.dp(6));
-        footer.addView(note, noteParams);
-        box.addView(footer);
-        return box;
-    }
-
     /**
      * The rail: everything that moves you through text, as rockers.
      *
@@ -696,14 +652,21 @@ public class ContextBar extends LinearLayout {
         // dismisses itself. Drawing them as switches promised a state they do not
         // hold. The sticky-modifier lever is gone outright: nothing in the client
         // implements it, and a control that latches nothing is a lie with a hinge.
+        // One block, because they are one question: how does text get into the
+        // line. Not a rocker — neither is a direction of the other, and pressing
+        // one must not suggest the pair tilts. A cluster says "these belong
+        // together" while leaving each cap its own face to be pressed.
         TextView mic = buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate());
-        mic.setTextSize(TypedValue.COMPLEX_UNIT_DIP, buttons.iconSizeDp() + 8);
-        rail.addView(railControl(mic, 58));
-
+        mic.setTextSize(TypedValue.COMPLEX_UNIT_DIP, buttons.iconSizeDp() + 6);
         TextView keyboard = buttons.icon(ICON_KEYBOARD, Buttons.DESTINATION,
                 "on-screen keyboard", v -> host.onKeyboard());
         keyboard.setTextSize(TypedValue.COMPLEX_UNIT_DIP, buttons.iconSizeDp() + 4);
-        rail.addView(railControl(keyboard, 48));
+
+        View input = buttons.cluster(true, mic, keyboard);
+        LayoutParams inputParams = new LayoutParams(
+                LayoutParams.MATCH_PARENT, buttons.dp(104));
+        inputParams.bottomMargin = buttons.dp(10);
+        rail.addView(input, inputParams);
 
         View pageUp = pageKey(Glyphs.Kind.PAGE_UP, ESC + "[5~", "page up, inside the program");
         View pageDown = pageKey(Glyphs.Kind.PAGE_DOWN, ESC + "[6~", "page down, inside the program");
@@ -860,10 +823,7 @@ public class ContextBar extends LinearLayout {
                 String send = action.optString("send");
                 boolean enter = action.optBoolean("enter");
                 boolean danger = "warn".equals(action.optString("style", "key"));
-                View chip = buttons.chip(label, danger, v -> {
-                    lastCommand.setText(label);
-                    host.onAction(send, enter);
-                });
+                View chip = buttons.chip(label, danger, v -> host.onAction(send, enter));
                 String hint = action.isNull("hint") ? null : action.optString("hint");
                 if (hint != null && !hint.isEmpty()) chip.setContentDescription(hint);
                 flow.addView(chip);
@@ -938,11 +898,7 @@ public class ContextBar extends LinearLayout {
         String hint = action.isNull("hint") ? null : action.optString("hint");
         if (hint != null && !hint.isEmpty()) row.setContentDescription(hint);
 
-        row.setOnClickListener(v -> {
-            selectedName.setText(name);
-            lastCommand.setText(send);
-            host.onAction(send, enter);
-        });
+        row.setOnClickListener(v -> host.onAction(send, enter));
         return row;
     }
 

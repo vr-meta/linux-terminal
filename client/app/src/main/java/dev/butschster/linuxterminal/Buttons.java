@@ -124,6 +124,9 @@ public class Buttons {
      */
     private final java.util.Map<View, Drawable> glyphs = new java.util.WeakHashMap<>();
 
+    /** The role each key was built with, so a cluster can rebuild its face. */
+    private final java.util.Map<View, Integer> styles = new java.util.WeakHashMap<>();
+
     private int textDp = 15;
     private int padH = 11;
     private int padV = 8;
@@ -196,6 +199,7 @@ public class Buttons {
         view.setMinWidth(dp(minWidth));
         view.setMinHeight(dp(minHeight) + sink);
         view.setBackground(background(style));
+        styles.put(view, style);
         if (skin.engrave) engrave(view);
         travel(view);
         view.setClickable(true);
@@ -270,8 +274,13 @@ public class Buttons {
     public TextView chip(String label, boolean danger, View.OnClickListener onClick) {
         TextView view = key(label, danger ? WARN : KEY, null, onClick);
         view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-        view.setPadding(dp(12), dp(5), dp(12), dp(5));
-        view.setMinHeight(dp(36));
+        // The same compensation `key` applies, restated because this overrides the
+        // padding: a physical cap gives the bottom of its cell to the extrusion, so
+        // text centred on the whole cell sits low on the cap. Worst exactly here,
+        // where the extrusion is a fifth of the height.
+        int sink = physicalSkin() ? dp(skin.depthDp) : 0;
+        view.setPadding(dp(12), dp(5), dp(12), dp(5) + sink);
+        view.setMinHeight(dp(36) + sink);
         view.setMinWidth(0);
         return view;
     }
@@ -317,6 +326,264 @@ public class Buttons {
     }
 
     /**
+     * The launch key: Enter, drawn as the one control that is not a member of the
+     * grid. See {@link LaunchKey} for why it earns a shape of its own.
+     */
+    public TextView launchKey(String label, String hint, View.OnClickListener onClick) {
+        TextView view = key(label, ENTER, hint, onClick);
+        view.setMinHeight(dp(minHeight) + dp(10));
+        view.setLetterSpacing(0.08f);
+
+        StateListDrawable states = new StateListDrawable();
+        float depth = dp(Math.max(2, skin.depthDp));
+        int fill = FILL[ENTER];
+        states.addState(new int[]{android.R.attr.state_pressed},
+                new LaunchKey(fill, skin.accentGo, depth, true));
+        states.addState(new int[]{android.R.attr.state_hovered},
+                new LaunchKey(lighten(fill, 0.10f), skin.accentGo, depth, false));
+        states.addState(new int[]{}, new LaunchKey(fill, skin.accentGo, depth, false));
+        view.setBackground(states);
+
+        // The mark every terminal puts on this key, drawn rather than typed so it
+        // matches the arrows beside it instead of arriving from whatever font the
+        // system hands back for the code point.
+        view.setCompoundDrawablesWithIntrinsicBounds(
+                Glyphs.drawable(context, Glyphs.Kind.ENTER, skin.legend[ENTER],
+                        iconSizeDp() + 2), null, null, null);
+        view.setCompoundDrawablePadding(dp(10));
+        return view;
+    }
+
+    /**
+     * Several keys in one housing, touching, divided by a seam.
+     *
+     * <p>This is the third way of putting controls together and it is neither of
+     * the others. Loose keys with a gap between them are separate objects. A
+     * rocker is one pitched cap where pressing an end tilts the whole thing — one
+     * control, two directions. A cluster is what a keyboard does: the keys are
+     * individually pressable and individually flat, but they are set into one
+     * cut-out with no space between them, so the eye takes them as a block while
+     * the hand still finds each cap.
+     *
+     * <p>Drawn by rounding each cap only where it faces the outside world and
+     * leaving it square where it meets its neighbour, with two device pixels of
+     * housing showing through as the seam. That is the whole trick: the outer
+     * silhouette is one rounded rectangle and every internal edge is a straight
+     * line, which is what a moulded key block looks like from above.
+     *
+     * <p>Use it where the members are the same kind of thing and are reached for
+     * together — the arrow keys, or dictation beside the keyboard. Controls that
+     * merely sit near each other keep their gap.
+     */
+    public LinearLayout cluster(boolean vertical, View... cells) {
+        LinearLayout housing = new LinearLayout(context);
+        housing.setOrientation(vertical ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        housing.setBackground(section(true));
+        int pad = dp(3);
+        housing.setPadding(pad, pad, pad, pad);
+
+        float r = dp(skin.cornerDp);
+        for (int i = 0; i < cells.length; i++) {
+            View cell = cells[i];
+            boolean first = i == 0;
+            boolean last = i == cells.length - 1;
+
+            float tl = first ? r : 0;
+            float tr = (vertical ? first : last) ? r : 0;
+            float br = last ? r : 0;
+            float bl = (vertical ? last : first) ? r : 0;
+            float[] radii = {tl, tl, tr, tr, br, br, bl, bl};
+
+            Integer style = styles.get(cell);
+            if (style != null) {
+                cell.setBackground(clusteredFace(style, radii, glyphs.get(cell)));
+            }
+
+            LinearLayout.LayoutParams params = vertical
+                    ? new LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+                    : new LinearLayout.LayoutParams(
+                            0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+            // The seam: two pixels of the housing showing between neighbours.
+            if (!first) {
+                if (vertical) {
+                    params.topMargin = dp(2);
+                } else {
+                    params.setMarginStart(dp(2));
+                }
+            }
+            housing.addView(cell, params);
+        }
+        return housing;
+    }
+
+    /**
+     * The arrow block: one key above, several below, one cut-out around all of
+     * them.
+     *
+     * <p>The caller passes the row that already exists — the up key with whatever
+     * sits either side of it — and the keys that go beneath. Nothing moves: the
+     * cells keep their columns and their widths, and only the housing under them
+     * changes, which is the difference between grouping and rearranging.
+     */
+    public LinearLayout tee(View[] topRow, int stemIndex, View... bottom) {
+        LinearLayout block = new LinearLayout(context);
+        block.setOrientation(LinearLayout.VERTICAL);
+
+        int columns = topRow.length;
+        float left = (stemIndex + 0.02f) / columns;
+        float right = (stemIndex + 0.98f) / columns;
+        block.setBackground(new TeeHousing(0xFF0A1119, dp(skin.cornerDp) + dp(3),
+                left, right, 0.5f));
+
+        float r = dp(skin.cornerDp);
+        LinearLayout top = new LinearLayout(context);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        for (int i = 0; i < columns; i++) {
+            View cell = topRow[i];
+            if (i == stemIndex) {
+                // Rounded above, square below: the stem runs on into the arm.
+                float[] radii = {r, r, r, r, 0, 0, 0, 0};
+                Integer style = styles.get(cell);
+                if (style != null) {
+                    cell.setBackground(clusteredFace(style, radii, glyphs.get(cell)));
+                }
+            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            int inset = i == stemIndex ? dp(3) : gap() / 2;
+            params.setMargins(inset, i == stemIndex ? dp(3) : gap() / 2, inset, 0);
+            top.addView(cell, params);
+        }
+        block.addView(top, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        for (int i = 0; i < bottom.length; i++) {
+            View cell = bottom[i];
+            boolean first = i == 0;
+            boolean last = i == bottom.length - 1;
+
+            // A corner is rounded when both of its sides face the outside world,
+            // and square when either one meets a neighbour.
+            //
+            // Under the arm of the tee that gives the answer by itself: the left
+            // key has nothing above it — the stem is over the middle one — so its
+            // top-left is as external as its bottom-left and rounds with it. Only
+            // the centre key is square all round, because it has a neighbour on
+            // three sides. The first version rounded the bottom row along its
+            // bottom edge alone, which left the outer keys with a square shoulder
+            // above a round foot and no reason for the difference.
+            boolean stemAbove = i == stemIndex;
+            float tl = first ? r : 0;
+            float tr = last ? r : 0;
+            float br = last ? r : 0;
+            float bl = first ? r : 0;
+            if (stemAbove) {
+                tl = 0;
+                tr = 0;
+            }
+            float[] radii = {tl, tl, tr, tr, br, br, bl, bl};
+            Integer style = styles.get(cell);
+            if (style != null) {
+                cell.setBackground(clusteredFace(style, radii, glyphs.get(cell)));
+            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            params.setMargins(first ? dp(3) : dp(2), dp(2), last ? dp(3) : 0, dp(3));
+            row.addView(cell, params);
+        }
+        block.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Twice the ordinary gap beneath the block. What follows it is Enter, and
+        // a cluster that ends flush against the next control reads as five keys in
+        // one housing rather than four — the seam that means "same block" and the
+        // gap that means "different control" have to differ by more than a pixel.
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = gap();
+        block.setLayoutParams(params);
+        return block;
+    }
+
+    /**
+     * Square off one edge of a key so it can meet a cluster on that side.
+     *
+     * <p>For the arrow cluster: the up key lives in the row above, between two
+     * unrelated keys, and cannot join the housing without moving — which this
+     * keypad does not do for appearance. Squaring its lower corners and closing
+     * the gap beneath it gets the inverted T that every keyboard has, while every
+     * key stays in the cell it has always occupied.
+     */
+    public void joinBelow(View key) {
+        Integer style = styles.get(key);
+        if (style == null) return;
+        float r = dp(skin.cornerDp);
+        float[] radii = {r, r, r, r, 0, 0, 0, 0};
+        key.setBackground(clusteredFace(style, radii, glyphs.get(key)));
+    }
+
+    private StateListDrawable clusteredFace(int style, float[] radii, Drawable glyph) {
+        if (!physicalSkin()) return flatClusteredFace(style, radii, glyph);
+
+        StateListDrawable states = new StateListDrawable();
+        float depth = dp(skin.depthDp);
+        int face = FILL[style];
+        int border = skin.edge[style];
+        int legend = skin.legend[style];
+
+        states.addState(new int[]{android.R.attr.state_pressed},
+                withGlyph(new PhysicalKey(face, border, legend, 0, depth, true, 0)
+                        .corners(radii), glyph));
+        states.addState(new int[]{android.R.attr.state_hovered},
+                withGlyph(new PhysicalKey(lighten(face, 0.06f),
+                        blend(border, skin.accentNav, 0.6f), legend, 0, depth, false,
+                        skin.accentNav).corners(radii), glyph));
+        states.addState(new int[]{},
+                withGlyph(new PhysicalKey(face, border, legend, 0, depth, false, 0)
+                        .corners(radii), glyph));
+        return states;
+    }
+
+    /**
+     * A cluster cell on a skin that has no moulded cap.
+     *
+     * <p>Grouping is not a property of one skin. A block of keys in a single
+     * cut-out is a statement about what the controls are — reached for together,
+     * pressed separately — and that is true whether the panel is drawn as
+     * machined metal or as flat plates. So the shape is built here from the same
+     * per-corner radii, using whatever the skin's own fill and edge are: the
+     * silhouette is the same everywhere, the material is not.
+     */
+    private StateListDrawable flatClusteredFace(int style, float[] radii, Drawable glyph) {
+        StateListDrawable states = new StateListDrawable();
+        int face = FILL[style];
+        states.addState(new int[]{android.R.attr.state_pressed},
+                withGlyph(flatFace(lighten(face, 0.35f), radii, style), glyph));
+        states.addState(new int[]{android.R.attr.state_hovered},
+                withGlyph(flatFace(lighten(face, 0.18f), radii, style), glyph));
+        states.addState(new int[]{}, withGlyph(flatFace(face, radii, style), glyph));
+        return states;
+    }
+
+    private GradientDrawable flatFace(int fill, float[] radii, int style) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(fill);
+        shape.setCornerRadii(radii);
+        if (skin.border > 0) shape.setStroke(dp(skin.border), skin.edge[style]);
+        return shape;
+    }
+
+    private Drawable withGlyph(Drawable face, Drawable glyph) {
+        return glyph == null ? face : stack(face, glyph);
+    }
+
+    /**
      * A line inside a display: lit text on the glass, with no cap of its own.
      *
      * <p>Selection is an inversion — the phosphor fills the row and the text goes
@@ -340,11 +607,20 @@ public class Buttons {
             // A little bloom, the way a phosphor spreads past the beam. Small
             // enough to soften the edge of a stroke and not enough to close the
             // counters — that is the line between "lit" and "out of focus".
-            // Halved. A phosphor does spread, but the spread was landing on the
-            // stroke rather than around it, and every letter came out a weight
-            // heavier than the face actually is — which reads as a fat font rather
-            // than as a lit one.
-            view.setShadowLayer(dp(2), 0f, 0f, Color.argb(70, Color.red(skin.phosphor),
+            // Back up to the reference's 4px at 35%, having been halved once and
+            // then found too faint to read as lit at all.
+            //
+            // The earlier complaint was real but was about the wrong number: a
+            // wide, strong bloom lands on the stroke and thickens the letter. A
+            // wider, weaker one lands around it and does not. So the radius goes
+            // up and the alpha stays low — spread without weight, which is what a
+            // phosphor actually does.
+            // text-shadow: 0 0 6px rgba(82,255,125,.5) — the selected row's value
+            // from the reference sheet, which is the brighter of the two it gives.
+            // .5 alpha is 128 of 255. The colour comes from this skin's own
+            // phosphor rather than the sheet's, so a skin that changes its tube
+            // changes its bloom with it.
+            view.setShadowLayer(dp(6), 0f, 0f, Color.argb(128, Color.red(skin.phosphor),
                     Color.green(skin.phosphor), Color.blue(skin.phosphor)));
         }
         view.setClickable(true);
@@ -352,12 +628,7 @@ public class Buttons {
         debounced(view, onClick);
         if (hint != null && !hint.isEmpty()) view.setContentDescription(hint);
 
-        // The lit row inverts, so its text has to invert with it. A ColorStateList
-        // is the only way that stays in step — setting the colour on press would
-        // leave it dark on any state the listener did not fire for.
-        view.setTextColor(new android.content.res.ColorStateList(
-                new int[][]{{android.R.attr.state_pressed}, {}},
-                new int[]{skin.glass, skin.phosphor}));
+        glowOnHover(view, skin.phosphor, brighten(skin.phosphor));
         return view;
     }
 
@@ -384,23 +655,29 @@ public class Buttons {
         return view;
     }
 
-    /** Transparent, then a wash of phosphor, then full inversion. */
+    /**
+     * What a row on a screen does when the ray is on it, and when it is pressed.
+     *
+     * <p>Nothing fills. A row is text on glass, and painting a rectangle behind it
+     * turns it into a button — which is exactly the thing this layer exists not to
+     * be. Under the ray the phosphor simply burns brighter, which is what a cursor
+     * does on a character display and costs no new shape. Pressed, the row takes a
+     * thin outline: the beam is now drawing a box, and a box around a line is how
+     * a terminal has always said "this one".
+     */
     private StateListDrawable selection() {
         StateListDrawable states = new StateListDrawable();
-        GradientDrawable pressed = new GradientDrawable();
-        pressed.setColor(skin.phosphor);
-        pressed.setCornerRadius(dp(skin.cornerDp));
 
-        GradientDrawable hovered = new GradientDrawable();
-        hovered.setColor(Color.argb(46, Color.red(skin.phosphor), Color.green(skin.phosphor),
-                Color.blue(skin.phosphor)));
-        hovered.setCornerRadius(dp(skin.cornerDp));
+        GradientDrawable pressed = new GradientDrawable();
+        pressed.setColor(Color.TRANSPARENT);
+        pressed.setCornerRadius(dp(skin.cornerDp));
+        pressed.setStroke(dp(1), Color.argb(190, Color.red(skin.phosphor),
+                Color.green(skin.phosphor), Color.blue(skin.phosphor)));
 
         GradientDrawable idle = new GradientDrawable();
         idle.setColor(Color.TRANSPARENT);
 
         states.addState(new int[]{android.R.attr.state_pressed}, pressed);
-        states.addState(new int[]{android.R.attr.state_hovered}, hovered);
         states.addState(new int[]{}, idle);
         return states;
     }
@@ -424,6 +701,40 @@ public class Buttons {
                 android.animation.ObjectAnimator.ofFloat(view, "translationY", 0f)
                         .setDuration(70));
         view.setStateListAnimator(states);
+    }
+
+    /** The same phosphor with the beam turned up: towards white, not another hue. */
+    public static int brighten(int colour) {
+        return Color.rgb(
+                (int) (Color.red(colour) + (255 - Color.red(colour)) * 0.45f),
+                (int) (Color.green(colour) + (255 - Color.green(colour)) * 0.45f),
+                (int) (Color.blue(colour) + (255 - Color.blue(colour)) * 0.45f));
+    }
+
+    /**
+     * Make a line of phosphor brighten under the ray instead of gaining a
+     * background. The text keeps its place, its weight and its colour family — only
+     * the beam's intensity changes, which is the one thing a tube can actually do.
+     */
+    public void glowOnHover(final TextView text, final int resting, final int lit) {
+        text.setOnHoverListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_HOVER_ENTER:
+                    text.setTextColor(lit);
+                    text.setShadowLayer(dp(10), 0f, 0f, Color.argb(170, Color.red(lit),
+                            Color.green(lit), Color.blue(lit)));
+                    break;
+                case MotionEvent.ACTION_HOVER_EXIT:
+                    text.setTextColor(resting);
+                    text.setShadowLayer(dp(6), 0f, 0f, Color.argb(128,
+                            Color.red(skin.phosphor), Color.green(skin.phosphor),
+                            Color.blue(skin.phosphor)));
+                    break;
+                default:
+                    break;
+            }
+            return false;
+        });
     }
 
     /**
@@ -659,6 +970,12 @@ public class Buttons {
     public TextView half(String label, String hint, View.OnClickListener onClick) {
         TextView view = key(label, KEY, hint, onClick);
         view.setBackground(pressOnly());
+        // And undo the extrusion compensation `key` just applied. A half has no
+        // extrusion — it is a face on a cap that belongs to the pair — so the
+        // padding that centres a legend on a standing key pushes this one off
+        // centre instead. Visible on A+ / A− before it was noticed anywhere else.
+        view.setPadding(dp(padH), dp(padV), dp(padH), dp(padV));
+        view.setMinHeight(dp(minHeight));
         return view;
     }
 

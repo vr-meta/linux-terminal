@@ -64,6 +64,25 @@ public class PhysicalKey extends Drawable {
     private final RectF cap = new RectF();
     private final RectF extrusion = new RectF();
 
+    /**
+     * Per-corner radii, when this key is one cell of a cluster.
+     *
+     * <p>A key sitting alone is rounded on all four corners. A key that is one of
+     * several inside a single housing is rounded only where it meets the outside
+     * world and square where it meets its neighbour — which is what makes a block
+     * of keys read as one part with seams rather than as separate caps that happen
+     * to be close together. Null means the ordinary all-round radius.
+     */
+    private float[] radii;
+
+    private final android.graphics.Path shape = new android.graphics.Path();
+
+    /** The same key, rounded only on the corners given. See {@link #radii}. */
+    public PhysicalKey corners(float[] perCorner) {
+        this.radii = perCorner;
+        return this;
+    }
+
     public PhysicalKey(int face, int border, int legend, float radiusPx, float depthPx,
                        boolean pressed, int halo) {
         this.face = face;
@@ -137,20 +156,19 @@ public class PhysicalKey extends Drawable {
         }
 
         // The height of the cap: hard-edged, so it reads as the side of a solid.
-        canvas.drawRoundRect(extrusion, radius, radius, solid);
-
-        canvas.drawRoundRect(cap, radius, radius, body);
+        drawShape(canvas, extrusion, solid);
+        drawShape(canvas, cap, body);
 
         if (pressed) {
             canvas.save();
             canvas.clipRect(cap);
             inner.setStrokeWidth(depth);
-            canvas.drawRoundRect(cap, radius, radius, inner);
+            drawShape(canvas, cap, inner);
             canvas.restore();
         }
 
         bevel.setStrokeWidth(1f);
-        canvas.drawRoundRect(cap, radius, radius, bevel);
+        drawShape(canvas, cap, bevel);
 
         if (halo != 0) {
             // Illumination is two rings, not a blur: the outer one is what a glow
@@ -169,7 +187,17 @@ public class PhysicalKey extends Drawable {
 
         edge.setStrokeWidth(1f);
         edge.setColor(border);
-        canvas.drawRoundRect(cap, radius, radius, edge);
+        drawShape(canvas, cap, edge);
+    }
+
+    private void drawShape(Canvas canvas, RectF rect, Paint paint) {
+        if (radii == null) {
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            return;
+        }
+        shape.reset();
+        shape.addRoundRect(rect, radii, android.graphics.Path.Direction.CW);
+        canvas.drawPath(shape, paint);
     }
 
     /** The colour this control's legend is written in. */

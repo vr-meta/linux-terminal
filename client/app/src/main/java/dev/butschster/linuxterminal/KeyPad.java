@@ -55,12 +55,17 @@ public class KeyPad extends LinearLayout {
         // Nothing is left empty and the cluster still reads as the inverted T every
         // keyboard has, because the arrows carry a colour of their own — the shape
         // survives having neighbours.
-        addView(row(
-                key("^W", "\u0017", Buttons.KEY, "delete the word before the cursor"),
-                repeating(Glyphs.Kind.UP, ESC + "[A", Buttons.ARROW, "up — previous command"),
-                key("^U", "\u0015", Buttons.KEY, "delete to the start of the line")));
-
-        addView(row(
+        // The arrow block: ^W and ^U keep their columns, the up key keeps its cell,
+        // and one T-shaped cut-out is drawn under all four arrows. Grouping by
+        // changing the housing rather than by moving anything — see Buttons.tee.
+        View up = repeating(Glyphs.Kind.UP, ESC + "[A", Buttons.ARROW, "up — previous command");
+        addView(buttons.tee(
+                new View[]{
+                        key("^W", "\u0017", Buttons.KEY, "delete the word before the cursor"),
+                        up,
+                        key("^U", "\u0015", Buttons.KEY, "delete to the start of the line"),
+                },
+                1,
                 repeating(Glyphs.Kind.LEFT, ESC + "[D", Buttons.ARROW, "left"),
                 repeating(Glyphs.Kind.DOWN, ESC + "[B", Buttons.ARROW, "down"),
                 repeating(Glyphs.Kind.RIGHT, ESC + "[C", Buttons.ARROW, "right")));
@@ -72,7 +77,7 @@ public class KeyPad extends LinearLayout {
 
         // Enter takes the full width at the bottom, where two of its four error
         // directions are the window edge and a miss costs nothing.
-        addView(row(key("Enter", "\r", Buttons.ENTER, "run it")));
+        addView(row(buttons.launchKey("Enter", "run it", v -> send.send("\r"))));
     }
 
     /**
@@ -102,6 +107,23 @@ public class KeyPad extends LinearLayout {
         View view = buttons.glyphKey(kind, style, hint, v -> send.send(bytes));
         buttons.repeatOnHold(view, () -> send.send(bytes));
         return view;
+    }
+
+    /**
+     * A row that touches the one above it: the arrow cluster meeting the up key.
+     *
+     * <p>Same cells, same widths, same positions — only the margin between the two
+     * rows is gone, so the block below sits against the key above and the pair
+     * reads as one arrow cluster in the shape a keyboard uses.
+     */
+    private LinearLayout joined(View cell) {
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(HORIZONTAL);
+        LayoutParams params = new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, 1f);
+        params.setMargins(buttons.gap() / 2, 0, buttons.gap() / 2, buttons.gap() / 2);
+        row.addView(cell, params);
+        return row;
     }
 
     private LinearLayout row(View... cells) {

@@ -49,6 +49,7 @@ public class Display extends Drawable {
     private final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint scan = new Paint();
     private final Paint vignette = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint halo = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final RectF face = new RectF();
     private final float radius;
@@ -134,6 +135,20 @@ public class Display extends Drawable {
             vignette.setShader(new android.graphics.RadialGradient(cx, cy, Math.max(1f, r),
                     new int[]{Color.TRANSPARENT, Color.argb(58, 0, 0, 0)},
                     new float[]{0.55f, 1f}, Shader.TileMode.CLAMP));
+
+            // radial-gradient(120% 90% at 50% 45%, rgba(20,90,45,.14), transparent 70%)
+            //
+            // Taken from the reference sheet rather than approximated, including
+            // the offset centre: the bright spot of a tube sits a little above the
+            // middle, because the deflection yoke is not symmetrical about it.
+            // .14 alpha is 36 of 255; the stop at 70% is where it reaches nothing.
+            float haloX = face.left + face.width() * 0.50f;
+            float haloY = face.top + face.height() * 0.45f;
+            float haloR = Math.max(face.width() * 1.20f, face.height() * 0.90f) * 0.5f;
+            halo.setShader(new android.graphics.RadialGradient(haloX, haloY,
+                    Math.max(1f, haloR),
+                    new int[]{Color.argb(36, 20, 90, 45), Color.TRANSPARENT},
+                    new float[]{0f, 0.70f}, Shader.TileMode.CLAMP));
         }
     }
 
@@ -146,16 +161,29 @@ public class Display extends Drawable {
             canvas.drawRoundRect(face, radius, radius, sheen);
         }
         if (crt) {
-            // Every third device pixel, at 6% black. Fine enough that at any
-            // sensible text size it reads as a surface the letters sit on rather
-            // than as stripes across them — `docs/readability.md` is the reason it
-            // is not the fat, obvious scanline of a filter.
             canvas.save();
             canvas.clipRect(face);
-            scan.setColor(Color.argb(15, 0, 0, 0));
-            for (float y = face.top; y < face.bottom; y += 3f) {
-                canvas.drawRect(face.left, y, face.right, y + 1f, scan);
+
+            // Two lines per period, not one: a faintly green band and a faintly
+            // black one, two device pixels each. That is what the reference sheet
+            // asks for and it is also what a shadow mask actually does — the gaps
+            // between rows are not black, they are the phosphor not being struck,
+            // so they keep the tube's colour. A single dark line every third pixel
+            // reads as a dirty screen; this reads as a raster.
+            // linear-gradient(rgba(10,70,30,.045) 50%, rgba(0,0,0,.045) 50%)
+            // at background-size 100% 4px: two device pixels of each, and .045
+            // alpha is 11 of 255.
+            for (float y = face.top; y < face.bottom; y += 4f) {
+                scan.setColor(Color.argb(11, 10, 70, 30));
+                canvas.drawRect(face.left, y, face.right, y + 2f, scan);
+                scan.setColor(Color.argb(11, 0, 0, 0));
+                canvas.drawRect(face.left, y + 2f, face.right, y + 4f, scan);
             }
+
+            // The tube's own glow, brightest where the beam spends most of its
+            // time. Drawn before the vignette so the two meet in the middle
+            // distance rather than fighting at the edge.
+            canvas.drawRoundRect(face, radius, radius, halo);
             canvas.drawRoundRect(face, radius, radius, vignette);
             canvas.restore();
         }

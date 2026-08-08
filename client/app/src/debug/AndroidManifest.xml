@@ -18,7 +18,7 @@
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
             <layout
                 android:defaultWidth="1150dp"
-                android:defaultHeight="520dp"
+                android:defaultHeight="940dp"
                 android:minWidth="700dp"
                 android:minHeight="360dp"
                 android:gravity="center" />

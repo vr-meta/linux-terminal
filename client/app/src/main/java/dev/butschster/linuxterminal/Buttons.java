@@ -269,9 +269,9 @@ public class Buttons {
      */
     public TextView chip(String label, boolean danger, View.OnClickListener onClick) {
         TextView view = key(label, danger ? WARN : KEY, null, onClick);
-        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5f);
-        view.setPadding(dp(12), dp(4), dp(12), dp(4));
-        view.setMinHeight(dp(34));
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
+        view.setPadding(dp(12), dp(5), dp(12), dp(5));
+        view.setMinHeight(dp(36));
         view.setMinWidth(0);
         return view;
     }
@@ -296,7 +296,24 @@ public class Buttons {
     }
 
     public Drawable section() {
-        return new Section(0xFF0D141E, dp(containerCornerDp()));
+        return section(false);
+    }
+
+    /**
+     * A milled region. {@code fixed} marks the housings whose contents never
+     * change with context — the keypad, the rail — against the ones the host
+     * refills as you work.
+     *
+     * <p>Two things are fixed here that were both wrong before. The plate was
+     * 0xFF0D141E against a panel of 0xFF111824: four units per channel, under 2%
+     * of luminance, which through pancake lenses is the same colour — so the box
+     * was paid for entirely by its outline. And a fixed housing looked exactly
+     * like a dynamic one, which gave the hand no way to learn that one of them is
+     * furniture and the other is weather.
+     */
+    public Drawable section(boolean fixed) {
+        Section plate = new Section(fixed ? 0xFF0A1119 : 0xFF070C12, dp(containerCornerDp()));
+        return fixed ? plate.lit() : plate;
     }
 
     /**

@@ -30,11 +30,20 @@ public class Section extends Drawable {
     private final int fill;
     private final float radius;
 
+    /** A lit rim along the top: this housing is furniture, not weather. */
+    private boolean lit;
+
     private final Paint body = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint wall = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final RectF face = new RectF();
+
+    public Section lit() {
+        this.lit = true;
+        edge.setColor(0x1FFFFFFF);
+        return this;
+    }
 
     public Section(int fill, float radiusPx) {
         this.fill = fill;
@@ -64,6 +73,17 @@ public class Section extends Drawable {
         canvas.drawRoundRect(face, radius, radius, wall);
         canvas.restore();
         canvas.drawRoundRect(face, radius, radius, edge);
+
+        if (lit) {
+            // One hairline along the top edge only. A machined recess that is part
+            // of the chassis catches light where the plate was cut; a region the
+            // software refills does not get one, so the difference reads as how
+            // the panel was made rather than as a decoration applied to it.
+            edge.setColor(0x2EFFFFFF);
+            canvas.drawLine(face.left + radius, face.top + 0.5f,
+                    face.right - radius, face.top + 0.5f, edge);
+            edge.setColor(lit ? 0x0AFFFFFF : 0);
+        }
     }
 
     @Override

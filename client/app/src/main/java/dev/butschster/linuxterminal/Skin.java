@@ -482,7 +482,7 @@ public final class Skin {
         b.rule = 0xFF1B2432;
         b.text = 0xFFE7EEF8;
         b.muted = 0xFF8391A5;
-        b.heading = 0xFF536072;
+        b.heading = 0xFF7A8CA4;
 
         b.accentNav = 0xFF2DA8FF;
         b.accentGo = 0xFF36E37B;
@@ -497,7 +497,7 @@ public final class Skin {
                 0xFF222C3B,                 // COMMAND
                 0xFF2B1D22,                 // WARN
                 0xFF15291E,                 // ENTER — the primary face
-                0xFF16281E,                 // VOICE
+                0xFF222C3B,                 // VOICE — graphite; see the edge below
                 // The arrow cluster is a shade bluer than the keys around it. It
                 // is the one group on the pad the hand finds without reading, and
                 // the eye needs to find it the same way — but it is still a key,
@@ -511,7 +511,11 @@ public final class Skin {
                 0x612DA8FF,
                 0x73FF5252,                 // danger at 45%
                 0x9936E37B,                 // primary at 60%
-                0x8036E37B,
+                // The microphone is an input, not a confirmation. It was green
+                // only because the VOICE role was invented next to ENTER; a
+                // control that starts dictation has nothing to do with running
+                // a command, and green now belongs to the things that act.
+                0x662DA8FF,                 // VOICE — blue, with the keyboard
                 0x662DA8FF,                 // ARROW — blue at 40%
         };
         b.legend = new int[]{
@@ -520,7 +524,7 @@ public final class Skin {
                 0xFFCFE6FF,
                 0xFFFFB0B0,                 // --key--danger
                 0xFFC9FFDC,                 // --key--primary
-                0xFFBAFFCF,
+                0xFFCFE6FF,                 // VOICE — the nav legend
                 0xFFCFE6FF,                 // ARROW — the nav legend
         };
 
@@ -538,8 +542,17 @@ public final class Skin {
         b.crt = true;
         b.sections = true;
         b.glass = 0xFF031009;
-        b.phosphor = 0xFF52FF7D;
-        b.phosphorDim = 0xFF1B9E47;
+        // Green was doing five jobs at once — confirm, data, voice, connection,
+        // cursor — and the one with the most area wins, so "green means go" could
+        // not survive next to a whole column of green text.
+        //
+        // The fix is saturation, not hue. A saturated green stays the property of
+        // things that act: Enter, and the lamp that says the link is up. The
+        // screens drop to a paler, cooler phosphor — which is what a real P1 tube
+        // looks like anyway, and keeps the reading layer's whole reference intact
+        // instead of throwing it away for amber.
+        b.phosphor = 0xFF8FDCA6;
+        b.phosphorDim = 0xFF4E8F68;
         return new Skin(b);
     }
 

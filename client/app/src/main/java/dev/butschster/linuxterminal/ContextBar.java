@@ -517,24 +517,26 @@ public class ContextBar extends LinearLayout {
         headParams.bottomMargin = buttons.dp(12);
         reading.addView(head, headParams);
 
-        LinearLayout browser = consoleSection(context, "directory browser");
-        browser.addView(consoleScreen(context), new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        // No plate around the listings. The glass is already a housing, and a box
+        // around a box at nearly the same radius reads as a framing error — two
+        // walls 10dp apart, the outer one only 2% brighter than the panel, which
+        // through the lenses is the same colour. The caption stays; it is engraved
+        // on the panel, which is where a label belongs.
+        LinearLayout browser = captioned(context, "directory browser",
+                consoleScreen(context));
         addSection(reading, browser, 0f);
         browserBox = browser;
 
-        LinearLayout projectBox = consoleSection(context, "projects");
         projects = new FlowLayout(context, 0);
         projects.setPadding(buttons.dp(6), buttons.dp(6), buttons.dp(6), buttons.dp(6));
         ScrollView projectScroll = elasticScroll(context);
         projectScroll.addView(projects, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-        projectBox.addView(projectScroll, new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        LinearLayout projectBox = captioned(context, "projects", projectScroll);
         addSection(reading, projectBox, 0f);
         this.projectBox = projectBox;
 
-        LinearLayout commandBox = consoleSection(context, "commands");
+        LinearLayout commandBox = captioned(context, "commands", null);
         chipColumn = new LinearLayout(context);
         chipColumn.setOrientation(VERTICAL);
         ScrollView chipScroll = new ScrollView(context);
@@ -564,13 +566,13 @@ public class ContextBar extends LinearLayout {
         pressing.setOrientation(VERTICAL);
         addView(pressing, new LayoutParams(0, LayoutParams.MATCH_PARENT, 0.95f));
 
-        LinearLayout control = consoleSection(context, "terminal control");
+        LinearLayout control = consoleSection(context, "terminal control", true);
         KeyPad pad = new KeyPad(context, buttons, text -> host.onAction(text, false));
         control.addView(pad, new LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         addSection(pressing, control, 0f);
 
-        shortcuts = consoleSection(context, "shortcuts");
+        shortcuts = consoleSection(context, "shortcuts", false);
         ScrollView shortcutScroll = new ScrollView(context);
         shortcutScroll.addView(toolKeys, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
@@ -684,7 +686,7 @@ public class ContextBar extends LinearLayout {
     private View consoleRail(Context context) {
         LinearLayout rail = new LinearLayout(context);
         rail.setOrientation(VERTICAL);
-        rail.setBackground(buttons.section());
+        rail.setBackground(buttons.section(true));
         rail.setPadding(buttons.dp(8), buttons.dp(10), buttons.dp(8), buttons.dp(10));
 
         // Dictation and the keyboard are buttons, not levers.
@@ -759,14 +761,41 @@ public class ContextBar extends LinearLayout {
         column.addView(section, params);
     }
 
-    private LinearLayout consoleSection(Context context, String caption) {
+    /**
+     * A caption engraved on the panel with its content beneath it, and no plate.
+     *
+     * <p>For anything that is already a housing of its own — a screen, a scroller
+     * full of chips. What a plate buys is the statement "these belong together",
+     * and a screen makes that statement by being a screen.
+     */
+    private LinearLayout captioned(Context context, String caption, View content) {
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(VERTICAL);
-        box.setBackground(buttons.section());
+
+        TextView label = label(caption.toUpperCase(Locale.ROOT), Buttons.skin().heading, 12);
+        label.setLetterSpacing(0.10f);
+        label.setPadding(buttons.dp(2), buttons.dp(2), 0, buttons.dp(7));
+        box.addView(label);
+
+        if (content != null) {
+            box.addView(content, new LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
+        return box;
+    }
+
+    private LinearLayout consoleSection(Context context, String caption, boolean fixed) {
+        LinearLayout box = new LinearLayout(context);
+        box.setOrientation(VERTICAL);
+        box.setBackground(buttons.section(fixed));
         box.setPadding(buttons.dp(10), buttons.dp(10), buttons.dp(10), buttons.dp(10));
 
-        TextView label = label(caption.toUpperCase(Locale.ROOT), Buttons.skin().heading, 9);
-        label.setLetterSpacing(0.18f);
+        // 12dp and half the tracking. At 9dp with 0.18 tracking these were the
+        // least readable text on a surface whose regions they exist to name — and
+        // wide tracking makes it worse, because it destroys word shape, which is
+        // the only cue left once a glyph is too small to read letter by letter.
+        TextView label = label(caption.toUpperCase(Locale.ROOT), Buttons.skin().heading, 12);
+        label.setLetterSpacing(0.10f);
         label.setPadding(buttons.dp(2), buttons.dp(2), 0, buttons.dp(9));
         box.addView(label);
 
@@ -818,8 +847,8 @@ public class ContextBar extends LinearLayout {
             }
 
             TextView caption = label(group.optString("name").toUpperCase(Locale.ROOT),
-                    Buttons.skin().heading, 9);
-            caption.setLetterSpacing(0.18f);
+                    Buttons.skin().heading, 12);
+            caption.setLetterSpacing(0.10f);
             caption.setPadding(buttons.dp(2), buttons.dp(6), 0, buttons.dp(6));
             chipColumn.addView(caption);
 

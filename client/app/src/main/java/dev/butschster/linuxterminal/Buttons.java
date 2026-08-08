@@ -628,7 +628,7 @@ public class Buttons {
         debounced(view, onClick);
         if (hint != null && !hint.isEmpty()) view.setContentDescription(hint);
 
-        glowOnHover(view, skin.phosphor, brighten(skin.phosphor));
+        glowOnHover(view, view, skin.phosphor);
         return view;
     }
 
@@ -712,12 +712,26 @@ public class Buttons {
     }
 
     /**
+     * The spread a lit phosphor has around its stroke.
+     *
+     * <p>Wide and weak on purpose: a narrow strong bloom lands on the stroke and
+     * thickens the letter, a wide weak one lands around it and does not. 6dp at
+     * half alpha is the reference sheet's own text-shadow.
+     */
+    public void bloom(TextView text, int colour) {
+        if (!skin.crt) return;
+        text.setShadowLayer(dp(6), 0f, 0f, Color.argb(128, Color.red(colour),
+                Color.green(colour), Color.blue(colour)));
+    }
+
+    /**
      * Make a line of phosphor brighten under the ray instead of gaining a
      * background. The text keeps its place, its weight and its colour family — only
      * the beam's intensity changes, which is the one thing a tube can actually do.
      */
-    public void glowOnHover(final TextView text, final int resting, final int lit) {
-        text.setOnHoverListener((v, event) -> {
+    public void glowOnHover(final View target, final TextView text, final int resting) {
+        final int lit = brighten(resting);
+        target.setOnHoverListener((v, event) -> {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_HOVER_ENTER:
                     text.setTextColor(lit);
@@ -726,9 +740,7 @@ public class Buttons {
                     break;
                 case MotionEvent.ACTION_HOVER_EXIT:
                     text.setTextColor(resting);
-                    text.setShadowLayer(dp(6), 0f, 0f, Color.argb(128,
-                            Color.red(skin.phosphor), Color.green(skin.phosphor),
-                            Color.blue(skin.phosphor)));
+                    bloom(text, resting);
                     break;
                 default:
                     break;

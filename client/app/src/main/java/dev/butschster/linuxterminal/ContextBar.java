@@ -518,6 +518,11 @@ public class ContextBar extends LinearLayout {
         // the palette.
         where.setTextColor(Buttons.skin().phosphor);
         what.setTextColor(Buttons.skin().phosphorDim);
+        // And the same bloom. The header was the one lit surface drawing its text
+        // flat: the colour had been fixed, the beam had not, so it read as green
+        // ink rather than as a lit line.
+        buttons.bloom(where, Buttons.skin().phosphor);
+        buttons.bloom(what, Buttons.skin().phosphorDim);
         head.addView(where, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
         head.addView(what);
         head.addView(new Led(context, Buttons.skin().accentGo, true),
@@ -540,6 +545,7 @@ public class ContextBar extends LinearLayout {
         projects = new FlowLayout(context, 0);
         projects.setPadding(buttons.dp(6), buttons.dp(6), buttons.dp(6), buttons.dp(6));
         ScrollView projectScroll = elasticScroll(context);
+        projectScroll.setBackground(buttons.display());
         projectScroll.addView(projects, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         LinearLayout projectBox = captioned(context, "projects", projectScroll);
@@ -601,6 +607,7 @@ public class ContextBar extends LinearLayout {
         rows = new FlowLayout(context, 0);
         rows.setPadding(buttons.dp(6), buttons.dp(6), buttons.dp(6), buttons.dp(6));
         ScrollView scroll = elasticScroll(context);
+        scroll.setBackground(buttons.display());
         scroll.addView(rows, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         return scroll;
@@ -627,7 +634,6 @@ public class ContextBar extends LinearLayout {
                         buttons.dp(230), MeasureSpec.AT_MOST));
             }
         };
-        scroll.setBackground(buttons.squareDisplay());
         return scroll;
     }
 
@@ -898,6 +904,13 @@ public class ContextBar extends LinearLayout {
         String hint = action.isNull("hint") ? null : action.optString("hint");
         if (hint != null && !hint.isEmpty()) row.setContentDescription(hint);
 
+        // The listener goes on the row, not on the text.
+        //
+        // It was on the text and never fired: the row is what is clickable, so the
+        // row is what the ray hovers, and a TextView inside it that is neither
+        // clickable nor focusable is not asked about hover at all. Same effect,
+        // one level up — the row hears it and turns up the beam on its own label.
+        buttons.glowOnHover(row, title, 0xFF39D863);
         row.setOnClickListener(v -> host.onAction(send, enter));
         return row;
     }

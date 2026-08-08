@@ -329,31 +329,53 @@ public class Buttons {
      * The launch key: Enter, drawn as the one control that is not a member of the
      * grid. See {@link LaunchKey} for why it earns a shape of its own.
      */
-    public TextView launchKey(String label, String hint, View.OnClickListener onClick) {
-        TextView view = key(label, ENTER, hint, onClick);
-        // Taller than a key, because the collar eats into it from both sides and
-        // the cap inside must still be a comfortable target.
-        view.setMinHeight(dp(minHeight) + dp(22));
-        view.setLetterSpacing(0.08f);
+    public View launchKey(String label, String hint, View.OnClickListener onClick) {
+        // A striped bar rather than another cap, and a container rather than a
+        // single view: the legend sits on its own dark plate, the way a marked
+        // control carries its label on a patch so the banding does not run through
+        // the letters. One TextView cannot have two backgrounds.
+        LinearLayout bar = new LinearLayout(context);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER);
+        bar.setMinimumHeight(dp(minHeight) + dp(18));
+        bar.setClickable(true);
+        bar.setFocusable(false);
 
+        float radius = dp(7);
+        float depth = dp(5);
         StateListDrawable states = new StateListDrawable();
-        float depth = dp(Math.max(2, skin.depthDp));
-        int fill = FILL[ENTER];
         states.addState(new int[]{android.R.attr.state_pressed},
-                new LaunchKey(fill, skin.accentGo, depth, true));
-        states.addState(new int[]{android.R.attr.state_hovered},
-                new LaunchKey(lighten(fill, 0.10f), skin.accentGo, depth, false));
-        states.addState(new int[]{}, new LaunchKey(fill, skin.accentGo, depth, false));
-        view.setBackground(states);
+                new HazardFace(radius, depth, true));
+        states.addState(new int[]{}, new HazardFace(radius, depth, false));
+        bar.setBackground(states);
+        travel(bar);
+        debounced(bar, onClick);
+        if (hint != null && !hint.isEmpty()) bar.setContentDescription(hint);
 
-        // The mark every terminal puts on this key, drawn rather than typed so it
-        // matches the arrows beside it instead of arriving from whatever font the
-        // system hands back for the code point.
-        view.setCompoundDrawablesWithIntrinsicBounds(
-                Glyphs.drawable(context, Glyphs.Kind.ENTER, skin.legend[ENTER],
-                        iconSizeDp() + 2), null, null, null);
-        view.setCompoundDrawablePadding(dp(10));
-        return view;
+        TextView plate = new TextView(context);
+        plate.setText(label.toUpperCase(java.util.Locale.ROOT));
+        plate.setTextColor(0xFFFFDB7A);
+        plate.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
+        plate.setTypeface(Fonts.mono(context));
+        plate.setLetterSpacing(0.18f);
+        plate.setSingleLine(true);
+        plate.setGravity(Gravity.CENTER);
+        plate.setPadding(dp(14), dp(5), dp(14), dp(5));
+
+        GradientDrawable patch = new GradientDrawable();
+        patch.setColor(0xD1080A06);
+        patch.setCornerRadius(dp(4));
+        plate.setBackground(patch);
+
+        plate.setCompoundDrawablesWithIntrinsicBounds(
+                Glyphs.drawable(context, Glyphs.Kind.ENTER, 0xFFFFDB7A, iconSizeDp()),
+                null, null, null);
+        plate.setCompoundDrawablePadding(dp(9));
+
+        bar.addView(plate, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        return bar;
     }
 
     /**

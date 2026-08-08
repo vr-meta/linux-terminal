@@ -330,86 +330,56 @@ public class Buttons {
      * grid. See {@link LaunchKey} for why it earns a shape of its own.
      */
     public View launchKey(String label, String hint, View.OnClickListener onClick) {
-        // A key lying in a milled pocket rather than standing on the plate, and
-        // sized to itself rather than to the row: this is the one control on the
-        // panel you press into the surface, and a bar spanning the width would say
-        // the opposite — that it is there to be swept at.
+        // Centred and sized to itself: this is one deliberate press, not a bar to
+        // sweep at, so it keeps edges you can see and leaves the rest of the row
+        // as dead space around it.
         LinearLayout centred = new LinearLayout(context);
         centred.setOrientation(LinearLayout.HORIZONTAL);
         centred.setGravity(Gravity.CENTER);
 
-        LinearLayout well = new LinearLayout(context);
-        well.setOrientation(LinearLayout.HORIZONTAL);
-        well.setGravity(Gravity.CENTER);
-        well.setBackground(new SlotWell(dp(10)));
-        int pad = dp(8);
-        well.setPadding(pad, pad, pad, pad);
-        well.setClickable(true);
-        well.setFocusable(false);
-        debounced(well, onClick);
-        if (hint != null && !hint.isEmpty()) well.setContentDescription(hint);
+        TextView view = new TextView(context);
+        view.setText(label.toUpperCase(java.util.Locale.ROOT));
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
+        view.setTypeface(Fonts.mono(context));
+        view.setLetterSpacing(0.10f);
+        view.setSingleLine(true);
+        view.setGravity(Gravity.CENTER);
+        view.setTextColor(skin.legend[ENTER]);
+        view.setPadding(dp(22), dp(12), dp(20), dp(12) + dp(6));
+        view.setMinWidth(dp(150));
+        view.setClickable(true);
+        view.setFocusable(false);
+        debounced(view, onClick);
+        if (hint != null && !hint.isEmpty()) view.setContentDescription(hint);
 
-        TextView face = new TextView(context);
-        face.setText(label.toUpperCase(java.util.Locale.ROOT));
-        face.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
-        face.setTypeface(Fonts.mono(context));
-        face.setLetterSpacing(0.16f);
-        face.setSingleLine(true);
-        face.setGravity(Gravity.CENTER);
-        face.setPadding(dp(20), dp(9), dp(18), dp(9));
-        face.setMinWidth(dp(150));
-        face.setDuplicateParentStateEnabled(true);
-        face.setBackground(slotFace());
-        face.setTextColor(new android.content.res.ColorStateList(
-                new int[][]{{android.R.attr.state_pressed}, {android.R.attr.state_hovered}, {}},
-                new int[]{0xFFBAFFCF, 0xFFD9ECFF, 0xFF9DB6CF}));
+        // Every colour comes from the skin: the cap is the ENTER fill, the rim is
+        // its edge, the retainer is the plate it is mounted in. The shape is the
+        // same on every skin, the material is whatever that panel is made of —
+        // otherwise Enter becomes the one control that ignores which machine it is
+        // part of.
+        float radius = dp(Math.max(6, skin.cornerDp));
+        float throwPx = dp(6);
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed},
+                new Keycap(FILL[ENTER], skin.edge[ENTER], skin.bgPanel, radius, throwPx, true));
+        states.addState(new int[]{android.R.attr.state_hovered},
+                new Keycap(lighten(FILL[ENTER], 0.10f), skin.accentGo, skin.bgPanel,
+                        radius, throwPx, false));
+        states.addState(new int[]{},
+                new Keycap(FILL[ENTER], skin.edge[ENTER], skin.bgPanel, radius, throwPx, false));
+        view.setBackground(states);
 
-        // The mark goes after the word, where a key that commits puts it: you read
-        // what it does, then the sign that it fires.
-        face.setCompoundDrawablesWithIntrinsicBounds(null, null,
-                Glyphs.drawable(context, Glyphs.Kind.ENTER, 0xFF9DB6CF, iconSizeDp()), null);
-        face.setCompoundDrawablePadding(dp(10));
+        // The mark follows the word: you read what the key does, then the sign
+        // that it fires.
+        view.setCompoundDrawablesWithIntrinsicBounds(null, null,
+                Glyphs.drawable(context, Glyphs.Kind.ENTER, skin.legend[ENTER], iconSizeDp()),
+                null);
+        view.setCompoundDrawablePadding(dp(12));
 
-        well.addView(face, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT));
-        centred.addView(well, new LinearLayout.LayoutParams(
+        centred.addView(view, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         return centred;
-    }
-
-    /**
-     * The key lying in the slot: a flat cap with a two-pixel foot, brightening its
-     * border under the ray and turning green as it goes down.
-     */
-    private StateListDrawable slotFace() {
-        StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_pressed},
-                slotCap(0xFF161E29, 0x8036E37B));
-        states.addState(new int[]{android.R.attr.state_hovered},
-                slotCap(0xFF1F2937, 0x8046B4FF));
-        states.addState(new int[]{}, slotCap(0xFF1D2634, 0xFF2B3644));
-        return states;
-    }
-
-    private LayerDrawable slotCap(int fill, int border) {
-        GradientDrawable foot = new GradientDrawable();
-        foot.setColor(0xFF070B10);
-        foot.setCornerRadius(dp(6));
-
-        GradientDrawable cap = new GradientDrawable();
-        cap.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
-        cap.setColors(new int[]{fill, shade(fill, -8)});
-        cap.setCornerRadius(dp(6));
-        cap.setStroke(dp(1), border);
-
-        LayerDrawable stack = new LayerDrawable(new Drawable[]{foot, cap});
-        // Two pixels of foot showing beneath, as the sheet has it — enough to say
-        // the cap is a separate part lying in the pocket rather than painted on
-        // the bottom of it.
-        stack.setLayerInset(1, 0, 0, 0, 2);
-        return stack;
     }
 
     /**

@@ -61,7 +61,7 @@ public class TermView extends View {
     }
 
     private void rebuildRenderer() {
-        renderer = new TerminalRenderer(fontSize, Typeface.MONOSPACE);
+        renderer = new TerminalRenderer(fontSize, Fonts.mono(getContext()));
     }
 
     public int getFontSize() {

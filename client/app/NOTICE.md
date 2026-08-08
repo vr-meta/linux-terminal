@@ -1,4 +1,24 @@
-# Third-party code in this module
+# Third-party code and assets in this module
+
+## Fonts
+
+`src/main/assets/DejaVuSansMono.ttf` — the [DejaVu fonts](https://dejavu-fonts.github.io/),
+under the Bitstream Vera licence with the DejaVu changes under the same terms.
+Both permit redistribution, including in a bundled application.
+
+It is here for a specific reason: the thresholds in `docs/readability.md` were
+measured with this face, so a client drawing with anything else cannot be judged
+against them. The system alias `Typeface.MONOSPACE` resolves on Horizon OS to
+`DroidSansMono.ttf`, a face drawn for Android 2 that is neither what was measured
+nor what a terminal looks like.
+
+`src/main/assets/JetBrainsMono-Regular.ttf` — [JetBrains Mono](https://www.jetbrains.com/lp/mono/),
+SIL Open Font Licence 1.1. Carried alongside DejaVu while the two are being
+compared in the headset; whichever loses should be deleted rather than kept.
+
+`src/main/assets/MaterialIcons-Regular.ttf` — Material Icons, Apache 2.0.
+
+## Emulator
 
 `src/main/java/com/termux/terminal/` and `src/main/java/com/termux/view/TerminalRenderer.java`
 come from [termux/termux-app](https://github.com/termux/termux-app), whose

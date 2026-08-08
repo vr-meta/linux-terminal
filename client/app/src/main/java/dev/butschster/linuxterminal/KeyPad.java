@@ -65,6 +65,19 @@ public class KeyPad extends LinearLayout {
                 repeating(Glyphs.Kind.DOWN, ESC + "[B", Buttons.ARROW, "down"),
                 repeating(Glyphs.Kind.RIGHT, ESC + "[C", Buttons.ARROW, "right")));
 
+        // Paging, flanking the bottom of the arrow cluster the way a keyboard puts
+        // it: these are cursor keys, and they belong on the keyboard side.
+        //
+        // They are not the scroll rocker on the far-right strip and do not replace
+        // it. That one moves this app's transcript — everything the shell has ever
+        // printed — and it is useless inside a program that redraws its own screen,
+        // because the text you want to reach was never printed as scrollback. These
+        // go to the program and let it page through what it drew.
+        addView(row(
+                repeating("PgUp", ESC + "[5~", Buttons.ARROW, "page up, inside the program"),
+                spacer(),
+                repeating("PgDn", ESC + "[6~", Buttons.ARROW, "page down, inside the program")));
+
         // Enter takes the full width at the bottom, where two of its four error
         // directions are the window edge and a miss costs nothing.
         addView(row(key("Enter", "\r", Buttons.ENTER, "run it")));
@@ -95,6 +108,19 @@ public class KeyPad extends LinearLayout {
     /** Arrows and paging: one press per line makes a list unusable. */
     private View repeating(Glyphs.Kind kind, String bytes, int style, String hint) {
         View view = buttons.glyphKey(kind, style, hint, v -> send.send(bytes));
+        buttons.repeatOnHold(view, () -> send.send(bytes));
+        return view;
+    }
+
+    /**
+     * The same, for a key whose face is a word rather than a shape. PgUp and PgDn
+     * have no glyph in {@link Glyphs} and should not get one invented: a chevron
+     * with a bar over it would be one more thing to tell apart from the arrow
+     * directly above it, at the size where docs/readability.md says fine detail
+     * stops surviving the lenses.
+     */
+    private View repeating(String label, String bytes, int style, String hint) {
+        View view = buttons.key(label, style, hint, v -> send.send(bytes));
         buttons.repeatOnHold(view, () -> send.send(bytes));
         return view;
     }

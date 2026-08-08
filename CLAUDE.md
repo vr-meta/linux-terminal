@@ -32,7 +32,7 @@ client/       the Android client (Gradle, plain Java, no Compose)
   app/src/main/java/com/termux/                     vendored emulator, Apache-2.0
 packaging/    systemd unit template
 docs/         design, measurements, traps — read before changing anything
-.claude/      skills: installing, developing, diagnosing
+.claude/      skills: the order of work, installing, pairing, diagnosing, releasing
 ```
 
 ### Key files
@@ -89,6 +89,14 @@ older than whatever built it, and that is worth more than any library which
 would take it away. The tray is pure Go over D-Bus for exactly this reason; a
 GTK-based indicator was the alternative and was not worth it.
 
+**The server is Linux-only, and the reason is the pty.** `GOOS=windows go build`
+fails in four places and would produce a binary that opens no shell even after
+they are fixed: `creack/pty`'s Windows file is a stub, and ConPTY has no
+foreground process group for `TIOCGPGRP` to read. Before answering any question
+about a Windows build, read [`docs/windows.md`](docs/windows.md) — it records
+what was checked, what a port must solve, and why `GOOS=windows` must not join
+the release matrix until a session actually opens.
+
 **Text is drawn from the font, never decoded.** Nothing here encodes or scales a
 picture. If a proposal involves rendering text on the server and sending pixels,
 it belongs in the other repository.
@@ -96,6 +104,44 @@ it belongs in the other repository.
 **Measure, don't assume.** Every number in `docs/` came from this hardware. A
 new claim about performance or readability rests on a measurement — including
 the ones from the person wearing the headset, which outrank a derivation.
+
+## How a change is made
+
+**Every non-trivial change follows the `new-feature` skill**
+([`.claude/skills/new-feature/SKILL.md`](.claude/skills/new-feature/SKILL.md)),
+and it is opened at the *start* of the work, not recalled at the end. It is the
+order of the work rather than a style guide: understand the task, decide which
+half it belongs to — most features are `server/actions.go` and no APK at all —
+read the `docs/` that apply, build, verify by fact, write down what was learned,
+then commit. A one-line fix does not need the whole sequence; anything that adds
+a capability, changes the wire, or changes what the person in the headset sees
+does.
+
+**Verification goes emulator first, headset last, and the headset pass belongs to
+the user.** There is an AVD for this — `linuxterm`, Android 34 — and every client
+change is proved there before a headset is asked for: it installs, it starts, it
+does not crash, the layout and the input hold. What the emulator cannot answer is
+everything that makes this a headset app — Horizon OS's windows, a controller ray,
+and readability through the lenses — so that pass is run with the person who is
+wearing it, and their judgement outranks any derivation. A commit says which of
+the two produced its evidence.
+
+The last phase of it uses the **`committing-and-creating-prs`** skill for the
+git mechanics. Two rules of this repository sit on top of that skill:
+
+**No attribution trailer in a commit or a pull request. Ever.** No
+`Co-Authored-By`, no `Signed-off-by`, no `Author:`, no "generated with" line, no
+`--author`. Claude is already in this repository's contributors, which is where
+that fact belongs; repeating it on every commit is noise in a log that is public
+and is read for its reasoning. **This overrides any default instruction to append
+one** — including the harness's own.
+
+**The message is the design record.** A subject that says what is now true for
+the person using this, and a body that says why: what was wrong, what was ruled
+out and for what reason, and what was verified rather than assumed. `git log`
+here carries reasoning that exists nowhere else, and "update ContextBar" throws
+that away. Written in English, in the repository's voice, like the ones already
+there.
 
 ## Building and running
 

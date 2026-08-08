@@ -36,8 +36,11 @@ import android.util.TypedValue;
  */
 public final class Glyphs {
 
-    /** Which shape to draw. LEFT/RIGHT/DOWN are UP's own path, rotated. */
-    public enum Kind { LEFT, RIGHT, UP, DOWN, BACKSPACE, ENTER }
+    /**
+     * Which shape to draw. LEFT/RIGHT/DOWN are UP's own path, rotated, and
+     * PAGE_UP/PAGE_DOWN are that same path drawn twice.
+     */
+    public enum Kind { LEFT, RIGHT, UP, DOWN, PAGE_UP, PAGE_DOWN, BACKSPACE, ENTER }
 
     // The stroke is a fraction of the icon box, not a fixed dp number, so it
     // scales with the box instead of thinning out relative to a bigger one if
@@ -94,10 +97,15 @@ public final class Glyphs {
             float cy = bounds.exactCenterY();
             float r = Math.min(bounds.width(), bounds.height()) * 0.30f;
             switch (kind) {
-                case UP:        drawChevron(canvas, cx, cy, r, 0f);   break;
-                case RIGHT:     drawChevron(canvas, cx, cy, r, 90f);  break;
-                case DOWN:      drawChevron(canvas, cx, cy, r, 180f); break;
-                case LEFT:      drawChevron(canvas, cx, cy, r, 270f); break;
+                case UP:        drawChevrons(canvas, cx, cy, r, 0f, 1);   break;
+                case RIGHT:     drawChevrons(canvas, cx, cy, r, 90f, 1);  break;
+                case DOWN:      drawChevrons(canvas, cx, cy, r, 180f, 1); break;
+                case LEFT:      drawChevrons(canvas, cx, cy, r, 270f, 1); break;
+                // Narrower than the single, so the pair occupies about the box one
+                // chevron would: a doubled glyph drawn at full size reads as bigger
+                // rather than as more, which is the wrong difference to signal.
+                case PAGE_UP:   drawChevrons(canvas, cx, cy, r * 0.82f, 0f, 2);   break;
+                case PAGE_DOWN: drawChevrons(canvas, cx, cy, r * 0.82f, 180f, 2); break;
                 case BACKSPACE: drawBackspace(canvas, bounds);        break;
                 case ENTER:     drawEnter(canvas, bounds);            break;
             }
@@ -110,15 +118,38 @@ public final class Glyphs {
          * 90° steps, which is what makes "identical stroke weight and optical
          * size across the set" a guarantee rather than something four separate
          * drawings have to agree on by hand.
+         *
+         * <p>Drawn {@code count} times, stacked along the direction it points,
+         * for the same reason: paging is one chevron said twice, and the double
+         * has to be the single repeated rather than a second drawing that
+         * happens to resemble it. The two sit on the far-right strip directly
+         * under the scroll rocker, so "one arrow, two arrows" is the whole
+         * difference the eye gets between moving this app's transcript and
+         * paging inside the program — it cannot afford to also be a difference
+         * in weight or in how the tips are cut.
          */
-        private void drawChevron(Canvas canvas, float cx, float cy, float r, float rotation) {
+        private void drawChevrons(Canvas canvas, float cx, float cy, float r, float rotation,
+                                  int count) {
             canvas.save();
             canvas.rotate(rotation, cx, cy);
-            Path path = new Path();
-            path.moveTo(cx - r, cy + r * 0.55f);
-            path.lineTo(cx, cy - r * 0.55f);
-            path.lineTo(cx + r, cy + r * 0.55f);
-            canvas.drawPath(path, paint);
+            // Spaced by the perpendicular distance between the strokes, not by the
+            // vertical offset, because that is what the eye actually sees: the
+            // chevron's arms sit at 47.7° (Δy of 1.1r over Δx of r), so a step
+            // along y shows up as only cos(47.7°) ≈ 0.67 of itself between the
+            // lines. 1.5r therefore leaves a gap of about one stroke width, and
+            // the 1.35r it was first written at left roughly three quarters of
+            // one — enough to fill in to a single thick mark through the lenses,
+            // which is the failure mode this whole file exists to avoid.
+            float step = r * 1.5f;
+            float first = cy - step * (count - 1) / 2f;
+            for (int i = 0; i < count; i++) {
+                float y = first + step * i;
+                Path path = new Path();
+                path.moveTo(cx - r, y + r * 0.55f);
+                path.lineTo(cx, y - r * 0.55f);
+                path.lineTo(cx + r, y + r * 0.55f);
+                canvas.drawPath(path, paint);
+            }
             canvas.restore();
         }
 

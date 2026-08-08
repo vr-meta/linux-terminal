@@ -330,52 +330,86 @@ public class Buttons {
      * grid. See {@link LaunchKey} for why it earns a shape of its own.
      */
     public View launchKey(String label, String hint, View.OnClickListener onClick) {
-        // A striped bar rather than another cap, and a container rather than a
-        // single view: the legend sits on its own dark plate, the way a marked
-        // control carries its label on a patch so the banding does not run through
-        // the letters. One TextView cannot have two backgrounds.
-        LinearLayout bar = new LinearLayout(context);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER);
-        bar.setMinimumHeight(dp(minHeight) + dp(18));
-        bar.setClickable(true);
-        bar.setFocusable(false);
+        // A key lying in a milled pocket rather than standing on the plate, and
+        // sized to itself rather than to the row: this is the one control on the
+        // panel you press into the surface, and a bar spanning the width would say
+        // the opposite — that it is there to be swept at.
+        LinearLayout centred = new LinearLayout(context);
+        centred.setOrientation(LinearLayout.HORIZONTAL);
+        centred.setGravity(Gravity.CENTER);
 
-        float radius = dp(7);
-        float depth = dp(5);
-        StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_pressed},
-                new HazardFace(radius, depth, true));
-        states.addState(new int[]{}, new HazardFace(radius, depth, false));
-        bar.setBackground(states);
-        travel(bar);
-        debounced(bar, onClick);
-        if (hint != null && !hint.isEmpty()) bar.setContentDescription(hint);
+        LinearLayout well = new LinearLayout(context);
+        well.setOrientation(LinearLayout.HORIZONTAL);
+        well.setGravity(Gravity.CENTER);
+        well.setBackground(new SlotWell(dp(10)));
+        int pad = dp(8);
+        well.setPadding(pad, pad, pad, pad);
+        well.setClickable(true);
+        well.setFocusable(false);
+        debounced(well, onClick);
+        if (hint != null && !hint.isEmpty()) well.setContentDescription(hint);
 
-        TextView plate = new TextView(context);
-        plate.setText(label.toUpperCase(java.util.Locale.ROOT));
-        plate.setTextColor(0xFFFFDB7A);
-        plate.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
-        plate.setTypeface(Fonts.mono(context));
-        plate.setLetterSpacing(0.18f);
-        plate.setSingleLine(true);
-        plate.setGravity(Gravity.CENTER);
-        plate.setPadding(dp(14), dp(5), dp(14), dp(5));
+        TextView face = new TextView(context);
+        face.setText(label.toUpperCase(java.util.Locale.ROOT));
+        face.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13f);
+        face.setTypeface(Fonts.mono(context));
+        face.setLetterSpacing(0.16f);
+        face.setSingleLine(true);
+        face.setGravity(Gravity.CENTER);
+        face.setPadding(dp(20), dp(9), dp(18), dp(9));
+        face.setMinWidth(dp(150));
+        face.setDuplicateParentStateEnabled(true);
+        face.setBackground(slotFace());
+        face.setTextColor(new android.content.res.ColorStateList(
+                new int[][]{{android.R.attr.state_pressed}, {android.R.attr.state_hovered}, {}},
+                new int[]{0xFFBAFFCF, 0xFFD9ECFF, 0xFF9DB6CF}));
 
-        GradientDrawable patch = new GradientDrawable();
-        patch.setColor(0xD1080A06);
-        patch.setCornerRadius(dp(4));
-        plate.setBackground(patch);
+        // The mark goes after the word, where a key that commits puts it: you read
+        // what it does, then the sign that it fires.
+        face.setCompoundDrawablesWithIntrinsicBounds(null, null,
+                Glyphs.drawable(context, Glyphs.Kind.ENTER, 0xFF9DB6CF, iconSizeDp()), null);
+        face.setCompoundDrawablePadding(dp(10));
 
-        plate.setCompoundDrawablesWithIntrinsicBounds(
-                Glyphs.drawable(context, Glyphs.Kind.ENTER, 0xFFFFDB7A, iconSizeDp()),
-                null, null, null);
-        plate.setCompoundDrawablePadding(dp(9));
-
-        bar.addView(plate, new LinearLayout.LayoutParams(
+        well.addView(face, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
-        return bar;
+        centred.addView(well, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        return centred;
+    }
+
+    /**
+     * The key lying in the slot: a flat cap with a two-pixel foot, brightening its
+     * border under the ray and turning green as it goes down.
+     */
+    private StateListDrawable slotFace() {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed},
+                slotCap(0xFF161E29, 0x8036E37B));
+        states.addState(new int[]{android.R.attr.state_hovered},
+                slotCap(0xFF1F2937, 0x8046B4FF));
+        states.addState(new int[]{}, slotCap(0xFF1D2634, 0xFF2B3644));
+        return states;
+    }
+
+    private LayerDrawable slotCap(int fill, int border) {
+        GradientDrawable foot = new GradientDrawable();
+        foot.setColor(0xFF070B10);
+        foot.setCornerRadius(dp(6));
+
+        GradientDrawable cap = new GradientDrawable();
+        cap.setOrientation(GradientDrawable.Orientation.TOP_BOTTOM);
+        cap.setColors(new int[]{fill, shade(fill, -8)});
+        cap.setCornerRadius(dp(6));
+        cap.setStroke(dp(1), border);
+
+        LayerDrawable stack = new LayerDrawable(new Drawable[]{foot, cap});
+        // Two pixels of foot showing beneath, as the sheet has it — enough to say
+        // the cap is a separate part lying in the pocket rather than painted on
+        // the bottom of it.
+        stack.setLayerInset(1, 0, 0, 0, 2);
+        return stack;
     }
 
     /**

@@ -544,8 +544,11 @@ public class ContextBar extends LinearLayout {
 
         projects = new FlowLayout(context, 0);
         projects.setPadding(buttons.dp(6), buttons.dp(6), buttons.dp(6), buttons.dp(6));
+        projects.setClipChildren(false);
+        projects.setClipToPadding(false);
         ScrollView projectScroll = elasticScroll(context);
         projectScroll.setBackground(buttons.display());
+        projectScroll.setClipChildren(false);
         projectScroll.addView(projects, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         LinearLayout projectBox = captioned(context, "projects", projectScroll);
@@ -606,8 +609,16 @@ public class ContextBar extends LinearLayout {
     private View consoleScreen(Context context) {
         rows = new FlowLayout(context, 0);
         rows.setPadding(buttons.dp(6), buttons.dp(6), buttons.dp(6), buttons.dp(6));
+        // A bloom is drawn outside the letter, so every container between the text
+        // and the screen has to stop clipping — otherwise the glow ends in a hard
+        // vertical line at the cell's edge, which is what a lit row was doing here
+        // while the same effect looked right on the other skins, where the row is
+        // the full width of the screen and the clip falls outside the glow.
+        rows.setClipChildren(false);
+        rows.setClipToPadding(false);
         ScrollView scroll = elasticScroll(context);
         scroll.setBackground(buttons.display());
+        scroll.setClipChildren(false);
         scroll.addView(rows, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         return scroll;
@@ -881,6 +892,8 @@ public class ContextBar extends LinearLayout {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(buttons.dp(8), buttons.dp(4), buttons.dp(8), buttons.dp(4));
         row.setClickable(true);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
         row.setBackground(buttons.rowSelection());
 
         TextView mark = label(up ? "\u2191" : "\u25b8", Buttons.skin().phosphorDim, 11);
@@ -892,6 +905,10 @@ public class ContextBar extends LinearLayout {
         title.setTypeface(Fonts.mono(getContext()));
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        // Room inside the view for the glow to land in. Clipping is off above, but
+        // a TextView still paints its shadow within its own bounds, so without the
+        // padding the spread has nowhere to go on the side the name ends at.
+        title.setPadding(0, buttons.dp(3), buttons.dp(8), buttons.dp(3));
         LayoutParams grow = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
         grow.setMarginStart(buttons.dp(8));
         row.addView(title, grow);

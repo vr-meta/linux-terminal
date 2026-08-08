@@ -197,27 +197,44 @@ public final class Glyphs {
          * KeyPad (a context action marked "runs on press") that still typed a
          * Unicode glyph instead of drawing one.
          */
+        /**
+         * The return mark: a stem down the right, a bar left along the bottom,
+         * and an arrowhead on the end of the bar.
+         *
+         * <p>Rewritten because the first version was unreadable at this size and
+         * the reason is worth keeping. Its arrowhead was built from two arms of
+         * different lengths meeting at a shallow angle, so at a stroke width of an
+         * eighth of the box the two nearly merged and the tip filled in — a blob
+         * with a tail rather than an arrow. Here the arms are the same length and
+         * meet at a right angle, symmetric about the bar, which is the one shape
+         * that stays an arrow when the ink spreads: the notch between the arms
+         * cannot close while they are 90° apart.
+         *
+         * <p>The bar sits an arm's length above the bottom rather than on it, so
+         * the lower arm has somewhere to go. Everything is proportional to the box,
+         * so the mark holds together at any size the bar asks for.
+         */
         private void drawEnter(Canvas canvas, Rect bounds) {
             float half = paint.getStrokeWidth() / 2f;
-            float left = bounds.left + half + bounds.width() * 0.16f;
-            float right = bounds.right - half - bounds.width() * 0.16f;
-            float top = bounds.top + half + bounds.height() * 0.18f;
-            float bottom = bounds.bottom - half - bounds.height() * 0.18f;
-            float hookX = left + (right - left) * 0.32f;
+            float left = bounds.left + half + bounds.width() * 0.14f;
+            float right = bounds.right - half - bounds.width() * 0.14f;
+            float top = bounds.top + half + bounds.height() * 0.14f;
+            float bottom = bounds.bottom - half - bounds.height() * 0.14f;
+
+            float arm = (bottom - top) * 0.28f;
+            float barY = bottom - arm;
+            float tipX = left + arm;
 
             Path stem = new Path();
             stem.moveTo(right, top);
-            stem.lineTo(right, bottom);
-            stem.lineTo(hookX, bottom);
+            stem.lineTo(right, barY);
+            stem.lineTo(tipX, barY);
             canvas.drawPath(stem, paint);
 
-            float armX = hookX + (right - hookX) * 0.42f;
-            float armTopY = top + (bottom - top) * 0.30f;
-            float armBottomY = bottom - (bottom - top) * 0.05f;
             Path head = new Path();
-            head.moveTo(armX, armTopY);
-            head.lineTo(hookX, bottom);
-            head.lineTo(armX, armBottomY);
+            head.moveTo(tipX + arm, barY - arm);
+            head.lineTo(tipX, barY);
+            head.lineTo(tipX + arm, barY + arm);
             canvas.drawPath(head, paint);
         }
 

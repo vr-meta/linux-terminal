@@ -48,6 +48,8 @@ public class LaunchKey extends Drawable {
     private final Paint groove = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint rim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint collarWall = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint knurl = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private final RectF housing = new RectF();
     private final RectF cap = new RectF();
@@ -68,6 +70,8 @@ public class LaunchKey extends Drawable {
         groove.setStyle(Paint.Style.STROKE);
         rim.setStyle(Paint.Style.STROKE);
         glow.setStyle(Paint.Style.STROKE);
+        collarWall.setStyle(Paint.Style.STROKE);
+        knurl.setStyle(Paint.Style.STROKE);
     }
 
     @Override
@@ -75,17 +79,24 @@ public class LaunchKey extends Drawable {
         housing.set(bounds.left + 0.5f, bounds.top + 0.5f,
                 bounds.right - 0.5f, bounds.bottom - 0.5f);
 
-        float inset = 3f;
+        // A deep collar rather than a hairline bezel: this is a button seated in a
+        // hole cut through the panel, the way a launch or arm control is mounted.
+        // The collar is what your eye reads as thickness of plate, so it has to be
+        // several pixels, not one.
+        float collar = 7f;
         float stand = pressed ? Math.min(depth, 1f) : depth;
-        cap.set(housing.left + inset, housing.top + inset,
-                housing.right - inset, housing.bottom - inset - depth);
+        cap.set(housing.left + collar, housing.top + collar,
+                housing.right - collar, housing.bottom - collar - depth);
         extrusion.set(cap.left, cap.top + stand, cap.right, cap.bottom + stand);
 
-        // Half the cap's height: round ends, straight middle.
-        radius = cap.height() / 2f;
+        // Square-shouldered, not a capsule. A capsule reads as a bar key — a wide
+        // thing you slap — and this is the opposite claim: one deliberate control,
+        // seated, pressed once. Its corners are the panel's own radius so it is
+        // still made of the same material as everything else.
+        radius = 9f;
 
-        inlay.set(cap.left + 5f, cap.top + 4f, cap.right - 5f, cap.bottom - 4f);
-        inlayRadius = Math.max(2f, inlay.height() / 2f);
+        inlay.set(cap.left + 7f, cap.top + 6f, cap.right - 7f, cap.bottom - 6f);
+        inlayRadius = Math.max(2f, radius - 3f);
 
         body.setShader(new LinearGradient(0, cap.top, 0, cap.bottom,
                 pressed
@@ -98,12 +109,22 @@ public class LaunchKey extends Drawable {
         groove.setShader(new LinearGradient(0, inlay.top, 0, inlay.bottom,
                 new int[]{0x8C000000, 0x1AFFFFFF},
                 new float[]{0f, 1f}, Shader.TileMode.CLAMP));
+
+        collarWall.setShader(new LinearGradient(0, housing.top, 0, housing.bottom,
+                new int[]{0xCC000000, Color.TRANSPARENT, 0x0FFFFFFF},
+                new float[]{0f, 0.4f, 1f}, Shader.TileMode.CLAMP));
     }
 
     @Override
     public void draw(Canvas canvas) {
-        // The bezel it is mounted in.
-        canvas.drawRoundRect(housing, radius + 3f, radius + 3f, bezel);
+        // The hole in the plate, and the shaded wall of it: the same recess this
+        // panel draws everywhere, at the size a mounted control needs.
+        canvas.drawRoundRect(housing, radius + 7f, radius + 7f, bezel);
+        canvas.save();
+        canvas.clipRect(housing);
+        collarWall.setStrokeWidth(6f);
+        canvas.drawRoundRect(housing, radius + 7f, radius + 7f, collarWall);
+        canvas.restore();
 
         if (!pressed) {
             canvas.drawRoundRect(extrusion, radius, radius, solid);
@@ -113,6 +134,18 @@ public class LaunchKey extends Drawable {
 
         groove.setStrokeWidth(1.5f);
         canvas.drawRoundRect(inlay, inlayRadius, inlayRadius, groove);
+
+        // Knurling down both shoulders — the grip a guarded control has so a glove
+        // finds it. Four short strokes a side, inside the groove, at the same
+        // alpha as the bevel so it reads as moulded rather than printed.
+        knurl.setStrokeWidth(1f);
+        float step = cap.height() / 5f;
+        for (int i = 1; i <= 4; i++) {
+            float y = cap.top + step * i;
+            knurl.setColor(0x1AFFFFFF);
+            canvas.drawLine(inlay.left + 3f, y, inlay.left + 9f, y, knurl);
+            canvas.drawLine(inlay.right - 9f, y, inlay.right - 3f, y, knurl);
+        }
 
         // Lit at rest, because this is the key the panel is built around. Two
         // rings rather than a blur, and quiet: it marks the primary control, it

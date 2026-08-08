@@ -331,7 +331,9 @@ public class Buttons {
      */
     public TextView launchKey(String label, String hint, View.OnClickListener onClick) {
         TextView view = key(label, ENTER, hint, onClick);
-        view.setMinHeight(dp(minHeight) + dp(10));
+        // Taller than a key, because the collar eats into it from both sides and
+        // the cap inside must still be a comfortable target.
+        view.setMinHeight(dp(minHeight) + dp(22));
         view.setLetterSpacing(0.08f);
 
         StateListDrawable states = new StateListDrawable();

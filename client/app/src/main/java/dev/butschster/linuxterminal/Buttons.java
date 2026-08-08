@@ -45,10 +45,18 @@ public class Buttons {
      * <p>Static, and read at the moment a view is built rather than captured once:
      * every screen in the app builds its keys through this class, so swapping the
      * skin and rebuilding is enough to see the whole app in the other treatment.
-     * That is what makes the two comparable at all — a redesign of the bar alone,
+     * That is what makes them comparable at all — a redesign of the bar alone,
      * with the connection manager still in the old palette, compares nothing.
+     *
+     * <p>The default is what the app ships as. It is CONSOLE: the arrangement that
+     * came out of the concept work and the reviews, chosen over the other four
+     * because it is the only one whose difference is structural rather than
+     * decorative — read on the left, press in the middle, the app's own controls
+     * on a rail. The rest stay in {@link Skin} because they are how this one is
+     * argued with, and because a skin that cannot be compared against anything
+     * stops being a decision and becomes a habit.
      */
-    private static Skin skin = Skin.capped();
+    private static Skin skin = Skin.console();
 
     public static void applySkin(Skin chosen) {
         skin = chosen;
@@ -330,53 +338,75 @@ public class Buttons {
      * grid. See {@link LaunchKey} for why it earns a shape of its own.
      */
     public View launchKey(String label, String hint, View.OnClickListener onClick) {
-        // Centred and sized to itself: this is one deliberate press, not a bar to
-        // sweep at, so it keeps edges you can see and leaves the rest of the row
-        // as dead space around it.
         LinearLayout centred = new LinearLayout(context);
         centred.setOrientation(LinearLayout.HORIZONTAL);
         centred.setGravity(Gravity.CENTER);
 
-        TextView view = new TextView(context);
-        view.setText(label.toUpperCase(java.util.Locale.ROOT));
-        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
-        view.setTypeface(Fonts.mono(context));
-        view.setLetterSpacing(0.10f);
-        view.setSingleLine(true);
-        view.setGravity(Gravity.CENTER);
-        view.setTextColor(skin.legend[ENTER]);
-        view.setPadding(dp(22), dp(12), dp(20), dp(12) + dp(6));
-        view.setMinWidth(dp(150));
-        view.setClickable(true);
-        view.setFocusable(false);
-        debounced(view, onClick);
-        if (hint != null && !hint.isEmpty()) view.setContentDescription(hint);
-
-        // Every colour comes from the skin: the cap is the ENTER fill, the rim is
-        // its edge, the retainer is the plate it is mounted in. The shape is the
-        // same on every skin, the material is whatever that panel is made of —
-        // otherwise Enter becomes the one control that ignores which machine it is
-        // part of.
         float radius = dp(Math.max(6, skin.cornerDp));
         float throwPx = dp(6);
+
+        // Two views, because two things happen on press and only one of them is
+        // the background: the cap goes down and the pocket does not. The legend is
+        // drawn by the view, so the view is what has to travel — a cap that moved
+        // inside its own background would slide out from under its own label,
+        // which is exactly what it did.
+        LinearLayout retainer = new LinearLayout(context);
+        retainer.setOrientation(LinearLayout.HORIZONTAL);
+        retainer.setGravity(Gravity.CENTER);
+        retainer.setBackground(new Keycap(Keycap.Part.RETAINER, FILL[ENTER],
+                skin.edge[ENTER], skin.bgPanel, radius, throwPx, false));
+        int pad = dp(5);
+        retainer.setPadding(pad, pad, pad, pad);
+        retainer.setClickable(true);
+        retainer.setFocusable(false);
+        debounced(retainer, onClick);
+        if (hint != null && !hint.isEmpty()) retainer.setContentDescription(hint);
+
+        TextView cap = new TextView(context);
+        cap.setText(label.toUpperCase(java.util.Locale.ROOT));
+        cap.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14f);
+        cap.setTypeface(Fonts.mono(context));
+        cap.setLetterSpacing(0.10f);
+        cap.setSingleLine(true);
+        cap.setGravity(Gravity.CENTER);
+        cap.setTextColor(skin.legend[ENTER]);
+        cap.setPadding(dp(20), dp(11), dp(18), dp(11) + dp(6));
+        cap.setMinWidth(dp(150));
+        // It takes the retainer's pressed state, so the cap lights and travels
+        // when the thing you actually aimed at is pressed.
+        cap.setDuplicateParentStateEnabled(true);
+
         StateListDrawable states = new StateListDrawable();
         states.addState(new int[]{android.R.attr.state_pressed},
-                new Keycap(FILL[ENTER], skin.edge[ENTER], skin.bgPanel, radius, throwPx, true));
+                new Keycap(Keycap.Part.CAP, FILL[ENTER], skin.edge[ENTER], skin.bgPanel,
+                        radius, throwPx, true));
         states.addState(new int[]{android.R.attr.state_hovered},
-                new Keycap(lighten(FILL[ENTER], 0.10f), skin.accentGo, skin.bgPanel,
-                        radius, throwPx, false));
+                new Keycap(Keycap.Part.CAP, lighten(FILL[ENTER], 0.10f), skin.accentGo,
+                        skin.bgPanel, radius, throwPx, false));
         states.addState(new int[]{},
-                new Keycap(FILL[ENTER], skin.edge[ENTER], skin.bgPanel, radius, throwPx, false));
-        view.setBackground(states);
+                new Keycap(Keycap.Part.CAP, FILL[ENTER], skin.edge[ENTER], skin.bgPanel,
+                        radius, throwPx, false));
+        cap.setBackground(states);
 
-        // The mark follows the word: you read what the key does, then the sign
-        // that it fires.
-        view.setCompoundDrawablesWithIntrinsicBounds(null, null,
+        // The travel itself: the whole cap, legend included, six pixels down.
+        android.animation.StateListAnimator moving = new android.animation.StateListAnimator();
+        moving.addState(new int[]{android.R.attr.state_pressed},
+                android.animation.ObjectAnimator.ofFloat(cap, "translationY", throwPx)
+                        .setDuration(90));
+        moving.addState(new int[]{},
+                android.animation.ObjectAnimator.ofFloat(cap, "translationY", 0f)
+                        .setDuration(70));
+        cap.setStateListAnimator(moving);
+
+        cap.setCompoundDrawablesWithIntrinsicBounds(null, null,
                 Glyphs.drawable(context, Glyphs.Kind.ENTER, skin.legend[ENTER], iconSizeDp()),
                 null);
-        view.setCompoundDrawablePadding(dp(12));
+        cap.setCompoundDrawablePadding(dp(12));
 
-        centred.addView(view, new LinearLayout.LayoutParams(
+        retainer.addView(cap, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        centred.addView(retainer, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT));
         return centred;

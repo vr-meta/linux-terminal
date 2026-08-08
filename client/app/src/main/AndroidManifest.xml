@@ -78,20 +78,21 @@
                  floor low enough that the bar can still be squeezed into a strip
                  when that is what the moment wants.
 
-                 460dp was the right default when the bar was one row of keys with
-                 a flow of buttons beside it. The console arrangement stacks a
-                 header, two listings, a chip column and two readouts down one
-                 column and a keypad down another; at 460 it opened already
-                 scrolled, which is the one state a control surface must not start
-                 in — you cannot learn where a control is if you have to go looking
-                 for it. Window size is the only window property Horizon OS gives a
-                 2D app (docs/horizon.md), and the floor stays where it was: the
-                 window is freely resizable by hand, so the minimum is there to
-                 stop an accident, not to enforce a taste. Only the size it opens
-                 at changes. -->
+                 It opens as a strip and grows if you want more of it.
+
+                 This went to 900dp for a while, on the argument that the console
+                 arrangement needs the height and should not open already scrolled.
+                 Worn, that was wrong twice over: a panel is pulled in close, where
+                 900dp of it fills the view and pushes the terminal out of the way,
+                 and the listings are elastic anyway — a short window shows fewer
+                 rows rather than a broken layout. Window size is the only window
+                 property Horizon OS gives a 2D app (docs/horizon.md), and the
+                 right use of it is to open small: growing a window by hand takes a
+                 second, and a panel that arrives too big has already taken the
+                 space it was going to be judged on. -->
             <layout
                 android:defaultWidth="1150dp"
-                android:defaultHeight="900dp"
+                android:defaultHeight="460dp"
                 android:minWidth="700dp"
                 android:minHeight="320dp"
                 android:gravity="bottom" />

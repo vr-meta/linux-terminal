@@ -37,6 +37,10 @@ import android.graphics.drawable.Drawable;
  */
 public class Keycap extends Drawable {
 
+    /** Which half of the assembly this drawable is: the pocket, or the cap in it. */
+    public enum Part { RETAINER, CAP }
+
+    private final Part part;
     private final int face;
     private final int edge;
     private final float radius;
@@ -56,8 +60,9 @@ public class Keycap extends Drawable {
     private final RectF cap = new RectF();
     private final RectF stand = new RectF();
 
-    public Keycap(int face, int edge, int plate, float radiusPx, float travelPx,
+    public Keycap(Part part, int face, int edge, int plate, float radiusPx, float travelPx,
                   boolean pressed) {
+        this.part = part;
         this.face = face;
         this.edge = edge;
         this.radius = radiusPx;
@@ -77,10 +82,13 @@ public class Keycap extends Drawable {
         well.set(bounds.left + 0.5f, bounds.top + 0.5f,
                 bounds.right - 0.5f, bounds.bottom - 0.5f);
 
-        float inset = 5f;
-        float drop = pressed ? travel : 0f;
-        cap.set(well.left + inset, well.top + inset + drop,
-                well.right - inset, well.bottom - inset - travel + drop);
+        // The cap does not move within its own bounds. The view carries it down —
+        // see Buttons.travel — because the legend is drawn by the view, and a cap
+        // that travelled inside its background would slide out from under its own
+        // label. What changes on press is only what is under it: the foot goes.
+        float inset = part == Part.RETAINER ? 0f : 0f;
+        cap.set(well.left + inset, well.top + inset,
+                well.right - inset, well.bottom - inset - travel);
         stand.set(cap.left, cap.top + travel, cap.right, cap.bottom + travel);
 
         // inset 0 2px 6px rgba(0,0,0,.9) — the pocket's own shadow.
@@ -107,12 +115,15 @@ public class Keycap extends Drawable {
 
     @Override
     public void draw(Canvas canvas) {
-        canvas.drawRoundRect(well, radius, radius, retainer);
-        canvas.save();
-        canvas.clipRect(well);
-        pocket.setStrokeWidth(6f);
-        canvas.drawRoundRect(well, radius, radius, pocket);
-        canvas.restore();
+        if (part == Part.RETAINER) {
+            canvas.drawRoundRect(well, radius, radius, retainer);
+            canvas.save();
+            canvas.clipRect(well);
+            pocket.setStrokeWidth(6f);
+            canvas.drawRoundRect(well, radius, radius, pocket);
+            canvas.restore();
+            return;
+        }
 
         if (!pressed) {
             for (int i = 3; i >= 1; i--) {

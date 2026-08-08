@@ -108,9 +108,36 @@ public class TermView extends View {
         canvas.restore();
     }
 
-    /** New output arrived: jump back to the live edge, the way a terminal behaves. */
+    /**
+     * New output arrived. Stay where the reader put us.
+     *
+     * <p>This used to snap back to the live edge on every write, which is the
+     * behaviour of a terminal that is already at the bottom — and there it is
+     * still what happens, because {@link #topRow} is 0 and nothing moves it.
+     * Scrolled back, it was wrong in the case that matters: Claude Code redraws
+     * its own status line several times a second, so the transcript bounced to
+     * the bottom before the reader had finished the screen they had scrolled to.
+     * Reaching older text was impossible in the one program this is used for
+     * most.
+     *
+     * <p>Holding position means moving with the text. The emulator counts the
+     * lines it scrolled since the counter was last cleared, so subtracting that
+     * keeps the same rows under the eye instead of letting them slide up and off.
+     * Typing still returns to the live edge — {@link #send} does it — so a
+     * command is never entered into a screen the reader cannot see.
+     */
     public void onOutput() {
-        if (topRow != 0) topRow = 0;
+        TerminalEmulator emulator = session == null ? null : session.getEmulator();
+        if (emulator != null) {
+            if (topRow != 0) {
+                int limit = -emulator.getScreen().getActiveTranscriptRows();
+                topRow = Math.max(limit, Math.min(0, topRow - emulator.getScrollCounter()));
+            }
+            // Always, not only when scrolled back: the counter is cumulative, and
+            // one left to run while sitting at the live edge would be applied in
+            // full the moment somebody scrolled up.
+            emulator.clearScrollCounter();
+        }
         invalidate();
     }
 

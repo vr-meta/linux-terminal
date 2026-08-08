@@ -65,6 +65,11 @@ public class KeyPad extends LinearLayout {
                 repeating(Glyphs.Kind.DOWN, ESC + "[B", Buttons.ARROW, "down"),
                 repeating(Glyphs.Kind.RIGHT, ESC + "[C", Buttons.ARROW, "right")));
 
+        // PgUp and PgDn were briefly here, flanking the arrows the way a keyboard
+        // puts them, and they were moved to the far-right strip after being worn.
+        // See the note on that strip in ContextBar: the hand reaches for paging
+        // beside the scroll rocker, not beside the letters.
+
         // Enter takes the full width at the bottom, where two of its four error
         // directions are the window edge and a miss costs nothing.
         addView(row(key("Enter", "\r", Buttons.ENTER, "run it")));

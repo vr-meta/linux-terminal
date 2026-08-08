@@ -61,6 +61,14 @@ public class ContextBar extends LinearLayout {
     private static final String ICON_KEYBOARD = "\ue312";
     private static final String ICON_STOP = "\ue047";
 
+    /**
+     * The only bytes this file sends on its own. Everything else it types came
+     * from the host, which is the rule — but see the paging rocker: PgUp and PgDn
+     * are fixed controls that exist whatever is running, and a fixed control
+     * cannot depend on the host having sent it.
+     */
+    private static final String ESC = "\u001b";
+
     private final Host host;
     private final Buttons buttons;
 
@@ -182,10 +190,17 @@ public class ContextBar extends LinearLayout {
 
         // ------------------------------------------------- far right: the app's own
 
-        // A strip of its own, because these are not keys. Everything to the left of
-        // this line is typed into the shell; nothing here is. Dictation, text size
-        // and scrolling belong to the app, and a user who has learned that boundary
-        // never has to wonder whether a press will reach the program they are in.
+        // A strip of its own: everything on it is about getting to what you want to
+        // see, rather than about what you want to type.
+        //
+        // That is a weaker line than the one it replaced. This strip used to be
+        // "nothing here is sent to the shell", which was clean and was wrong about
+        // the hand: paging was put on the keypad first, worn, and the reach for it
+        // kept going to the scroll rocker — because "move me through this text" is
+        // one intention, and whether the bytes end at this app's transcript or at
+        // the program's own screen is an implementation detail of where the text
+        // happens to live. PgUp and PgDn do go to the shell, and they sit here
+        // anyway, next to the scrolling they are the other half of.
         View stripDivider = new View(context);
         stripDivider.setBackgroundColor(Buttons.RULE);
         addView(stripDivider, new LayoutParams(buttons.dp(1), LayoutParams.MATCH_PARENT));
@@ -199,17 +214,33 @@ public class ContextBar extends LinearLayout {
         addControl(controls, buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate()));
         addControl(controls, buttons.icon(ICON_KEYBOARD, Buttons.COMMAND, "on-screen keyboard",
                 v -> host.onKeyboard()));
-        // Bigger over smaller, and scroll back over scroll forward: in both the
-        // upper half is the one that moves away from where you are.
+        // Up over down, everywhere on this strip: in every rocker here the upper
+        // half is the one that moves away from where you are.
+        //
+        // Paging first, then scrolling, and text size last. The order is how often
+        // the hand comes back: moving through text is the whole reason to look at
+        // this strip, and the font is set once in a session and then left alone —
+        // it was in the middle only because it was there first.
+        View pageUp = pageKey(Glyphs.Kind.PAGE_UP, ESC + "[5~", "page up, inside the program");
+        View pageDown = pageKey(Glyphs.Kind.PAGE_DOWN, ESC + "[6~", "page down, inside the program");
+        addControl(controls, buttons.rocker(pageUp, pageDown));
+
+        // Directly under the paging pair, and the difference between them is one
+        // chevron against two. They are the same intention aimed at two different
+        // texts: this moves what the shell has printed, and it cannot reach inside
+        // a program that draws its own screen, because that text was never printed
+        // as scrollback in the first place.
+        View scrollBack = buttons.glyphHalf(Glyphs.Kind.UP, "scroll this window back",
+                v -> host.onScroll(-10));
+        buttons.repeatOnHold(scrollBack, () -> host.onScroll(-10));
+        View scrollForward = buttons.glyphHalf(Glyphs.Kind.DOWN, "scroll this window forward",
+                v -> host.onScroll(10));
+        buttons.repeatOnHold(scrollForward, () -> host.onScroll(10));
+        addControl(controls, buttons.rocker(scrollBack, scrollForward));
+
         addControl(controls, buttons.rocker(
                 buttons.half("A+", "larger text", v -> host.onFontStep(2)),
                 buttons.half("A\u2212", "smaller text", v -> host.onFontStep(-2))));
-
-        View pageUp = buttons.glyphHalf(Glyphs.Kind.UP, "scroll back", v -> host.onScroll(-10));
-        buttons.repeatOnHold(pageUp, () -> host.onScroll(-10));
-        View pageDown = buttons.glyphHalf(Glyphs.Kind.DOWN, "scroll forward", v -> host.onScroll(10));
-        buttons.repeatOnHold(pageDown, () -> host.onScroll(10));
-        addControl(controls, buttons.rocker(pageUp, pageDown));
 
         // Descriptions ride on the buttons themselves. A hint printed somewhere
         // else — a line under the keys, the path at the top of another panel — is a
@@ -252,6 +283,21 @@ public class ContextBar extends LinearLayout {
         note = label("", Buttons.MUTED, 16);
         note.setPadding(buttons.dp(20), 0, 0, 0);
         under.addView(note);
+    }
+
+    /**
+     * Half of the paging rocker: a drawn glyph that types into the pty and repeats
+     * on hold, the way an arrow on {@link KeyPad} does.
+     *
+     * <p>It goes through {@code onAction} rather than through a new callback on
+     * purpose — that path already sends bytes without pressing Enter, and it is
+     * the same one every key on the pad takes, so a held PgDn behaves exactly like
+     * a held arrow rather than like a second implementation of the same idea.
+     */
+    private View pageKey(Glyphs.Kind kind, String bytes, String hint) {
+        View view = buttons.glyphHalf(kind, hint, v -> host.onAction(bytes, false));
+        buttons.repeatOnHold(view, () -> host.onAction(bytes, false));
+        return view;
     }
 
     private void addControl(LinearLayout strip, View view) {

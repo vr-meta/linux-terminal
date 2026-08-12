@@ -1,5 +1,6 @@
 package dev.butschster.linuxterminal;
 
+import android.app.Activity;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.text.TextUtils;
@@ -7,6 +8,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -61,6 +63,8 @@ public class ContextBar extends LinearLayout {
     private static final String ICON_MIC = "\ue029";
     private static final String ICON_KEYBOARD = "\ue312";
     private static final String ICON_STOP = "\ue047";
+    /** Material's "palette": the only thing on the bar that changes the bar. */
+    private static final String ICON_APPEARANCE = "\ue40a";
 
     /**
      * The only bytes this file sends on its own. Everything else it types came
@@ -87,6 +91,7 @@ public class ContextBar extends LinearLayout {
     private FlowLayout projects;
     private View browserBox;
     private View projectBox;
+    private View commandBox;
     private LinearLayout chipColumn;
     private LinearLayout shortcuts;
 
@@ -104,6 +109,10 @@ public class ContextBar extends LinearLayout {
     public ContextBar(Context context, Host host) {
         super(context);
         this.host = host;
+        // Before the first drawable is asked for: every background on this panel is
+        // built from the skin as the view is constructed, so a skin restored one
+        // line later would apply to nothing that has already been made.
+        Appearance.restore(context);
         Typeface icons = Typeface.createFromAsset(context.getAssets(), "MaterialIcons-Regular.ttf");
         this.buttons = new Buttons(context, icons);
 
@@ -303,6 +312,8 @@ public class ContextBar extends LinearLayout {
                 buttons.half("A+", "larger text", v -> host.onFontStep(2)),
                 buttons.half("A\u2212", "smaller text", v -> host.onFontStep(-2))));
 
+        addControl(controls, appearanceKey());
+
         // Descriptions ride on the buttons themselves. A hint printed somewhere
         // else — a line under the keys, the path at the top of another panel — is a
         // hint in the one place the eye is not while it is aiming.
@@ -359,6 +370,97 @@ public class ContextBar extends LinearLayout {
         View view = buttons.glyphHalf(kind, hint, v -> host.onAction(bytes, false));
         buttons.repeatOnHold(view, () -> host.onAction(bytes, false));
         return view;
+    }
+
+    /**
+     * The one control on this panel that is about the panel.
+     *
+     * <p>It sits on the strip with the other things that are the client's own and
+     * are never sent to the shell, and it is on that strip in <em>both</em>
+     * arrangements — the console rail and the older skins' controls. A way out of a
+     * skin has to exist inside every skin, or choosing one of them once is choosing
+     * it forever.
+     */
+    private View appearanceKey() {
+        return buttons.icon(ICON_APPEARANCE, Buttons.DESTINATION,
+                "how this panel looks", this::showAppearance);
+    }
+
+    /**
+     * The skins, offered where the person wearing the headset is.
+     *
+     * <p>Drawn from this panel's own parts rather than as a {@code PopupMenu}: the
+     * system menu is a light rectangle with a system typeface, and at half a metre
+     * it arrives as a piece of another application landing on top of this one.
+     *
+     * <p>Placed at the centre of the bar rather than under the button that opened
+     * it. The strip it is opened from is a few keys wide and at the edge of the
+     * window, so a dropdown either overflows the window or is squeezed into the
+     * strip's width; the panel's middle is somewhere the ray is already pointing.
+     */
+    private void showAppearance(View anchor) {
+        Skin skin = Buttons.skin();
+
+        LinearLayout menu = new LinearLayout(getContext());
+        menu.setOrientation(VERTICAL);
+        menu.setBackground(buttons.section(true));
+        int pad = buttons.dp(12);
+        menu.setPadding(pad, pad, pad, pad);
+
+        TextView caption = label("APPEARANCE", skin.heading, 12);
+        caption.setLetterSpacing(0.10f);
+        caption.setPadding(buttons.dp(8), 0, 0, buttons.dp(8));
+        menu.addView(caption);
+
+        PopupWindow popup = new PopupWindow(menu, buttons.dp(320),
+                LayoutParams.WRAP_CONTENT, true);
+        // Dismissed by pressing away from it: a menu with no way out but a choice
+        // is a menu that cannot be opened out of curiosity.
+        popup.setOutsideTouchable(true);
+
+        String current = Appearance.chosen(getContext());
+        for (Appearance.Choice choice : Appearance.CHOICES) {
+            menu.addView(appearanceRow(choice, choice.id.equals(current), popup),
+                    new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
+
+        popup.showAtLocation(this, Gravity.CENTER, 0, 0);
+    }
+
+    private View appearanceRow(Appearance.Choice choice, boolean active, PopupWindow popup) {
+        Skin skin = Buttons.skin();
+
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(VERTICAL);
+        row.setPadding(buttons.dp(8), buttons.dp(8), buttons.dp(8), buttons.dp(8));
+        row.setClickable(true);
+        row.setBackground(buttons.rowSelection());
+
+        // The mark, not a tick in a second column: the listing on this panel already
+        // says "this one" with a caret in front of the name, and one language for
+        // "you are here" is worth more than a prettier tick.
+        TextView name = label((active ? "▸ " : "   ") + choice.name,
+                active ? skin.accentGo : Buttons.TEXT, 16);
+        name.setTypeface(Fonts.mono(getContext()));
+        row.addView(name);
+
+        TextView note = label("   " + choice.note, Buttons.MUTED, 12);
+        note.setTypeface(Fonts.mono(getContext()));
+        row.addView(note);
+
+        row.setOnClickListener(v -> {
+            popup.dismiss();
+            if (active) return;
+            Appearance.choose(getContext(), choice);
+            // The whole panel is built from the skin as its views are constructed,
+            // so there is nothing to repaint — the window is made again instead.
+            // A terminal window already up keeps the look it was built with until
+            // it is next opened, which is the honest consequence of building the
+            // look once rather than watching for it.
+            Context context = getContext();
+            if (context instanceof Activity) ((Activity) context).recreate();
+        });
+        return row;
     }
 
     private void addControl(LinearLayout strip, View view) {
@@ -539,7 +641,7 @@ public class ContextBar extends LinearLayout {
         // on the panel, which is where a label belongs.
         LinearLayout browser = captioned(context, "directory browser",
                 consoleScreen(context));
-        addSection(reading, browser, 0f);
+        addElastic(reading, browser);
         browserBox = browser;
 
         projects = new FlowLayout(context, 0);
@@ -552,17 +654,28 @@ public class ContextBar extends LinearLayout {
         projectScroll.addView(projects, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
         LinearLayout projectBox = captioned(context, "projects", projectScroll);
-        addSection(reading, projectBox, 0f);
+        addElastic(reading, projectBox);
         this.projectBox = projectBox;
 
+        // Last in the column and the last thing to give up room, which is the
+        // opposite of how it was built.
+        //
+        // The commands had the weight and the two listings above them did not, so
+        // the listings took what their contents asked for — up to 230dp each — and
+        // the commands were handed whatever was left. In a column 460dp tall there
+        // was nothing left: `claude`, `codex`, `git status` and the rest measured to
+        // zero height and simply were not on the panel. They had not been removed,
+        // they had been pushed off the bottom by two directories.
         LinearLayout commandBox = captioned(context, "commands", null);
         chipColumn = new LinearLayout(context);
         chipColumn.setOrientation(VERTICAL);
-        ScrollView chipScroll = new ScrollView(context);
+        ScrollView chipScroll = elasticScroll(context, 200);
         chipScroll.addView(chipColumn, new ScrollView.LayoutParams(
                 LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
-        commandBox.addView(chipScroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
-        addSection(reading, commandBox, 1f);
+        commandBox.addView(chipScroll, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        addSection(reading, commandBox, 0f);
+        this.commandBox = commandBox;
 
         addView(gap(context, 12), new LayoutParams(buttons.dp(12), LayoutParams.MATCH_PARENT));
 
@@ -638,14 +751,22 @@ public class ContextBar extends LinearLayout {
      * should have had anyway.
      */
     private ScrollView elasticScroll(Context context) {
-        ScrollView scroll = new ScrollView(context) {
+        return elasticScroll(context, 230);
+    }
+
+    /**
+     * The same, with the ceiling stated. The commands take a lower one: a chip is
+     * shorter than a listing row, so 200dp is already five or six rows of them, and
+     * anything past that is a wall of buttons rather than a section of the panel.
+     */
+    private ScrollView elasticScroll(Context context, int ceilingDp) {
+        return new ScrollView(context) {
             @Override
             protected void onMeasure(int widthSpec, int heightSpec) {
                 super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(
-                        buttons.dp(230), MeasureSpec.AT_MOST));
+                        buttons.dp(ceilingDp), MeasureSpec.AT_MOST));
             }
         };
-        return scroll;
     }
 
     /**
@@ -701,6 +822,9 @@ public class ContextBar extends LinearLayout {
                 buttons.half("A+", "larger text", v -> host.onFontStep(2)),
                 buttons.half("A\u2212", "smaller text", v -> host.onFontStep(-2))));
 
+        rail.addView(appearanceKey(), new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
         hint(rail, null);
         return rail;
     }
@@ -733,6 +857,25 @@ public class ContextBar extends LinearLayout {
      * against the next one for exactly that reason. Routing every add through here
      * means the gap is applied where it survives.
      */
+    /**
+     * A section that is as tall as its contents, and is the one that gives way when
+     * the column is too short for everything on it.
+     *
+     * <p>WRAP_CONTENT <em>with</em> a weight, which is a combination that looks like
+     * a contradiction and is not: the weight applies to what is left over after
+     * every child has been measured, and when that leftover is negative — the column
+     * is over-full — it is taken back from the children that carry weight. So the
+     * listings stay content-driven while there is room, and are the ones squeezed
+     * when there is not. A section added with {@link #addSection} keeps its height
+     * either way.
+     */
+    private void addElastic(LinearLayout column, View section) {
+        LayoutParams params = new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, 1f);
+        params.bottomMargin = buttons.dp(12);
+        column.addView(section, params);
+    }
+
     private void addSection(LinearLayout column, View section, float weight) {
         LayoutParams params = weight > 0
                 ? new LayoutParams(LayoutParams.MATCH_PARENT, 0, weight)
@@ -861,6 +1004,9 @@ public class ContextBar extends LinearLayout {
         boolean anyProjects = projects.getChildCount() > 0;
         browserBox.setVisibility(anywhereToGo ? VISIBLE : GONE);
         projectBox.setVisibility(anyProjects ? VISIBLE : GONE);
+        // And by the same rule the section that holds them: a caption over nothing
+        // is a section that failed to load, which is not what an empty one means.
+        commandBox.setVisibility(chipColumn.getChildCount() > 0 ? VISIBLE : GONE);
 
         hint(chipColumn, where);
     }

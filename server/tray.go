@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"fyne.io/systray"
+	"github.com/godbus/dbus/v5"
 )
 
 // An indicator in the desktop's tray, for when the server runs on a machine you
@@ -66,11 +67,97 @@ func (s *Server) trayStatus() trayState {
 	return state
 }
 
-// trayAvailable reports whether there is a desktop to put an icon on. Without
-// this the library waits for a bus that will never answer.
-func trayAvailable() bool {
-	return os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "" &&
-		(os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("DISPLAY") != "")
+// The name a desktop takes on the session bus when it is willing to host tray
+// icons. GNOME's AppIndicator extension owns it; so does KDE, and so does any
+// other implementation of the same specification.
+const trayWatcher = "org.kde.StatusNotifierWatcher"
+
+// trayPossible reports whether there is a session bus at all — which is the one
+// thing that cannot appear later. Without a bus the library would wait for an
+// answer that will never come.
+func trayPossible() bool {
+	return os.Getenv("DBUS_SESSION_BUS_ADDRESS") != ""
+}
+
+// awaitTrayHost blocks until a desktop is willing to hold an icon, and reports
+// false only if the bus itself cannot be used.
+//
+// This replaced a check for DISPLAY or WAYLAND_DISPLAY, and the difference is
+// the whole bug. A user service is started by `systemd --user` at login, which
+// is BEFORE the graphical session has imported those variables into it — so the
+// server's own environment has neither, forever, no matter how many screens are
+// plugged in. `systemctl --user show-environment` on this machine lists
+// WAYLAND_DISPLAY while /proc/<pid>/environ of a server started three days ago
+// does not, which is exactly that ordering. The old check therefore answered
+// "no desktop here" on a desktop machine and the icon was never even attempted.
+//
+// Asking the bus is both correct and later-proof: the question is not whether an
+// X server exists, it is whether anything is offering to show an icon, and that
+// is a name on the bus. Waiting for it costs nothing — this runs on a goroutine
+// that would otherwise be blocked inside systray anyway — and it means the icon
+// appears at login on a machine where the server was started before there was a
+// session, which is the ordinary case for a service enabled with `WantedBy=
+// default.target`.
+func awaitTrayHost() bool {
+	conn, err := dbus.SessionBusPrivate()
+	if err != nil {
+		log.Printf("tray: no session bus: %v", err)
+		return false
+	}
+	// Private, not shared: systray opens its own connection and closing a shared
+	// one under it would take the icon with it.
+	defer conn.Close()
+	if err := conn.Auth(nil); err != nil {
+		log.Printf("tray: session bus refused us: %v", err)
+		return false
+	}
+	if err := conn.Hello(); err != nil {
+		log.Printf("tray: session bus refused us: %v", err)
+		return false
+	}
+
+	if trayHosted(conn) {
+		return true
+	}
+
+	signals := make(chan *dbus.Signal, 8)
+	conn.Signal(signals)
+	if err := conn.AddMatchSignal(
+		dbus.WithMatchObjectPath("/org/freedesktop/DBus"),
+		dbus.WithMatchInterface("org.freedesktop.DBus"),
+		dbus.WithMatchSender("org.freedesktop.DBus"),
+		dbus.WithMatchMember("NameOwnerChanged"),
+		dbus.WithMatchArg(0, trayWatcher),
+	); err != nil {
+		log.Printf("tray: cannot watch for a desktop: %v", err)
+		return false
+	}
+
+	// Asked again after subscribing, because a desktop that arrived between the
+	// first question and the match rule would otherwise never be noticed.
+	if trayHosted(conn) {
+		return true
+	}
+
+	log.Printf("tray: waiting for a desktop to offer a tray")
+	for signal := range signals {
+		// NameOwnerChanged carries [name, old owner, new owner]; a non-empty new
+		// owner is somebody taking the name.
+		if len(signal.Body) < 3 {
+			continue
+		}
+		if owner, ok := signal.Body[2].(string); ok && owner != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func trayHosted(conn *dbus.Conn) bool {
+	var owned bool
+	err := conn.BusObject().Call("org.freedesktop.DBus.NameHasOwner", 0, trayWatcher).
+		Store(&owned)
+	return err == nil && owned
 }
 
 // runTray blocks — systray owns the goroutine it is given.

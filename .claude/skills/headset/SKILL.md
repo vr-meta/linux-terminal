@@ -77,12 +77,14 @@ The Horizon OS compositor floods logcat and evicts everything within seconds, so
 **started before** the thing you want to see:
 
 ```sh
-adb logcat -c && adb logcat -s linux-terminal AndroidRuntime > /tmp/log.txt &
+adb logcat -c && adb logcat -s linux-terminal linux-vr AndroidRuntime > /tmp/log.txt &
 adb shell am start -n dev.butschster.linuxterminal/.ServersActivity
 ```
 
 `AndroidRuntime` is what carries a Java crash; without it a dead app looks like
-silence.
+silence. And **both** app tags: `HostSession` and `TermView` still log under
+`linux-vr`, inherited from the project this grew out of, so a filter on
+`linux-terminal` alone drops the connection and the rendering.
 
 ## Getting files off it — no mounting involved
 

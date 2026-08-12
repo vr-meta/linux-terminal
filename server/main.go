@@ -77,6 +77,10 @@ var (
 	// run without incident since. A server with no window should say it is
 	// running without being asked.
 	flagTray = flag.Bool("tray", true, "show an icon in the desktop tray")
+
+	// "Why is my file not being used" is asked with this, and answered by it:
+	// what loaded, from where, and which program names select it.
+	flagToolList = flag.Bool("tools", false, "list the tool files that are loaded and exit")
 )
 
 func main() {
@@ -85,6 +89,18 @@ func main() {
 
 	if *flagVersion {
 		fmt.Println(version)
+		return
+	}
+
+	// Before anything can be answered about what a bar would show, including by
+	// --tools and --dump-context.
+	toolProblems := tools.load()
+
+	if *flagToolList {
+		fmt.Print(tools.describe())
+		for _, problem := range toolProblems {
+			fmt.Fprintf(os.Stderr, "%s\n", problem)
+		}
 		return
 	}
 
@@ -147,6 +163,13 @@ func main() {
 		log.Fatalf("cannot listen on %s: %v", address, err)
 	}
 	log.Printf("%s %s on %s, shells start in %s (%s)", name, version, address, cwd, shell)
+
+	// Said out loud at startup, because a file that failed to parse is otherwise
+	// a bar that is quietly missing buttons, which reads as the feature not
+	// working rather than as a typo on line 9.
+	for _, problem := range toolProblems {
+		log.Printf("tools: %s", problem)
+	}
 
 	// The machine's own identity, made once and then left alone. Generating it
 	// here rather than lazily means the console and the tray can show the

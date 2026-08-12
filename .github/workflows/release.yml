@@ -22,9 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # From go.mod, not a number pinned here. This said "1.24" while the module
+      # asked for a newer Go, and it only built because the go command silently
+      # downloads the toolchain it needs — a release should not rest on that
+      # going on being true.
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
 
       - name: Vet

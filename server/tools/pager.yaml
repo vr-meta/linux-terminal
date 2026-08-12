@@ -1,0 +1,16 @@
+# Anything that took the screen and expects q.
+#
+# This is also the fallback for a program nothing recognises — see fallbackTool in
+# actions.go. git pipes almost everything through a pager, so `git log` with an
+# empty bar is a screen you cannot leave; and an unknown program that took over
+# the terminal is far more likely to be pager-like than not.
+
+match: [less, more, man]
+
+keys:
+  - {label: "q",     send: "q", style: warn, hint: quit}
+  - {label: "Space", send: " ", hint: page down}
+  - {label: "b",     send: "b", hint: page up}
+  - {label: "g",     send: "g", hint: top}
+  - {label: "G",     send: "G", hint: bottom}
+  - {label: "/",     send: "/", hint: search}

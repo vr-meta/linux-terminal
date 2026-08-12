@@ -99,7 +99,13 @@ public class TermActivity extends Activity implements Terminals.Target {
 
         // A window that can be closed has to be openable again, and a bar that is
         // gone takes Escape and Enter with it.
-        View bar = buttons.key("bar", Buttons.KEY, "show the key bar", v -> openBar());
+        //
+        // The keyboard mark rather than the word "bar": "bar" names the window this
+        // app happens to open, which is knowledge you only have once you have lost
+        // it. The mark names what comes back, and it is the same one the bar puts on
+        // its own on-screen-keyboard control, so the two read as one idea.
+        View bar = buttons.icon(Buttons.ICON_KEYBOARD, Buttons.KEY,
+                "the key bar — Escape, the arrows and Enter", v -> openBar());
         strip.addView(bar, sideParams());
 
         content = new FrameLayout(this);
@@ -205,6 +211,7 @@ public class TermActivity extends Activity implements Terminals.Target {
                         known.user = info.optString("user", known.user);
                         known.os = info.optString("os", known.os);
                         known.cwd = info.optString("cwd", known.cwd);
+                        known.version = info.optString("version", known.version);
                         Server.remember(TermActivity.this, known);
                     }
 

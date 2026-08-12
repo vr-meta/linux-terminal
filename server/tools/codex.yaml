@@ -1,0 +1,27 @@
+# Codex.
+#
+# Its own vocabulary, not Claude's translated: @ searches the workspace and Esc
+# twice forks the chat from the previous message rather than rewinding it.
+#
+# Tab queues a follow-up while Codex is still working, which is worth knowing and
+# is not a button: the client's fixed half already has Tab and sends the same
+# byte. A second one would be the same key in two places.
+
+match: [codex]
+
+keys:
+  - {label: "@",       send: "@",    hint: insert a file from the workspace}
+  - {label: "!",       send: "!",    hint: run a shell command}
+  - {label: "Esc Esc", send: "\e\e", hint: edit the previous message and fork}
+  - {label: "^O",      send: "\x0f", hint: copy the last output}
+  - {label: "/",       send: "/",    hint: commands}
+  - {label: "1",       send: "1",    hint: "approval prompt: yes"}
+  - {label: "2",       send: "2",    hint: "approval prompt: no"}
+
+  - {label: "/diff",        send: "/diff",        style: cmd, enter: true, hint: the git diff, untracked files included}
+  - {label: "/compact",     send: "/compact",     style: cmd, enter: true, hint: summarise to free tokens}
+  - {label: "/copy",        send: "/copy",        style: cmd, enter: true, hint: copy the last completed output}
+  - {label: "/skills",      send: "/skills",      style: cmd, enter: true, hint: browse and use skills}
+  - {label: "/permissions", send: "/permissions", style: cmd, enter: true, hint: what Codex may do unasked}
+  - {label: "/init",        send: "/init",        style: cmd, enter: true, hint: scaffold an AGENTS.md here}
+  - {label: "/clear",       send: "/clear",       style: warn, enter: true, hint: clear and start a new chat}

@@ -1,0 +1,7 @@
+# The REPL. One key, and it is the way out — ^D does it too, and ^D is on the
+# client's fixed half already.
+
+match: [python, python3]
+
+keys:
+  - {label: "exit()", send: "exit()", style: cmd, enter: true, hint: quit}

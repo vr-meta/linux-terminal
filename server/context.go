@@ -110,6 +110,13 @@ func (s *Session) pushContext(force bool) {
 	if tool != nil {
 		toolKey = *tool
 	}
+	// An edited tool file is a change to what the bar should show, exactly like a
+	// change of directory — and without this it would not arrive until one of
+	// those happened, which is never while somebody is editing and watching.
+	if generation := tools.generation.Load(); generation != s.lastTools {
+		s.lastTools = generation
+		force = true
+	}
 	if !force && cwd == s.lastCwd && toolKey == s.lastTool {
 		return
 	}
@@ -148,15 +155,16 @@ func (s *Session) pushContext(force bool) {
 // A tool is recognised by the basename of any argument in its command line, not
 // only argv[0]: tools are routinely launched through an interpreter, and the name
 // that matters is further along.
+//
+// Programs with a table of their own are not listed here — their `match:` list is
+// in the file that describes them, so adding a tool is one file rather than two
+// edits that can disagree. What is left are the ones recognised without having a
+// table: the bar shows their name and offers pager keys, which for a program that
+// took the screen is the right guess.
 var toolNames = map[string]string{
-	"claude": "claude", "codex": "codex", "aider": "aider",
-	"vim": "vim", "nvim": "vim", "vi": "vim", "nano": "nano",
-	"less": "pager", "more": "pager", "man": "pager",
-	"git":     "git",
-	"lazygit": "tui", "htop": "tui", "top": "tui", "btop": "tui",
-	"cch": "tui", "cgit": "tui",
-	"ssh": "ssh", "psql": "psql",
-	"python": "python", "python3": "python",
+	"aider": "aider",
+	"git":   "git",
+	"ssh":   "ssh", "psql": "psql",
 	"node": "node", "npm": "node",
 	"bash": "shell", "zsh": "shell", "sh": "shell", "fish": "shell",
 }
@@ -167,6 +175,11 @@ func classify(argv []string) (string, string) {
 			continue
 		}
 		name := filepath.Base(arg)
+		// A tool file wins over the built-in list, which is how a machine
+		// replaces our idea of what `lazygit` deserves with its own.
+		if kind := tools.kindFor(name); kind != "" {
+			return kind, name
+		}
 		if kind, ok := toolNames[name]; ok {
 			// "node" hosts other tools far more often than it is the tool;
 			// only report it when nothing more specific was found.

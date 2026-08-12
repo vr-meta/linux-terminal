@@ -2,31 +2,42 @@
 
 # linux-terminal
 
-A terminal for Linux that lives in a VR headset. A **server** you install on any
-machine you own, a **client** in the Quest that connects to it, and a control bar
-you can drive with your voice.
+**Have you ever tried to work in a terminal — or vibe-code — inside a VR
+headset?** Then you already know how that ends, and you do not need this README
+to describe it back to you in a caring voice.
 
-## What it is for
+Here is the part that changed, though. The typing left. With Claude Code or Codex
+in the session you are not writing code so much as reading what it did and saying
+what to do next, which is mostly "yes", sometimes "no, not like that", and almost
+never anything you would call touch-typing. Hands were the bottleneck. Hands were
+also the *only* argument the headset ever lost on.
 
-Coding agents changed what a terminal session is. With Claude Code, Codex or
-anything like them in front of you, most of the time you are not typing code —
-you are reading what the agent did and saying what to do next. That is
-supervision, and supervision does not need a desk.
+Take that argument away and the thing stops being a costume. As many terminals as
+you want, any size you want, parked wherever you left them in the room, and a
+desk that does not exist.
 
-So the terminal moves. The server runs wherever the code is: the machine under
-the desk, a box in a datacentre, a VPS you keep for exactly this. The headset
-connects to whichever one you pick and gives you as many terminal windows as you
-want, at any size, from the sofa. You speak, the text lands at the cursor, the
-agent works, and the buttons in front of you change to whatever that agent needs
-right now.
+So: a **server** on any Linux machine you own — the box under the desk, the work
+machine, that VPS you keep for reasons you no longer remember — and a **client**
+in the Quest that talks to it. No video anywhere in the pipeline. The shell makes
+text, the wire carries text, the headset draws the glyphs itself, at the panel's
+own resolution. Revolutionary, I know.
 
-That is the whole idea: **vibe-coding from the couch**, with a real shell on a
-real machine at the other end.
+Then you just talk. The headset records, the server runs it through Whisper —
+yours, or OpenAI's — and the words turn up at the cursor of whichever session you
+are looking at. Floating next to the terminal is a **bar of keys**: one half is
+everything the Quest's own keyboard forgot to include (Escape, `^C`, `^D`, Tab,
+the arrows, Enter), and the other half rearranges itself around whatever is
+running, so a permission prompt, `/compact` or a skill in that project is one
+press instead of a spelling contest.
 
-Two consequences worth stating plainly. It is a **client-server** product, not a
-companion to one particular desktop — several machines, listed side by side,
-each a press away. And it sends **text**, not video: a terminal over a phone
-tether or from another city works the same as one on the LAN.
+**Vibe-coding from the couch**, with a real shell on a real machine at the other
+end.
+
+Two things fall out of that, and both are the point. It is **client-server**, not
+a companion app for one blessed desktop: every machine you own, listed side by
+side, each one a press away. And it moves **text**, not pixels — so a shell
+reached over a phone tether from another city behaves exactly like one sitting on
+the LAN, which is not a sentence anybody streaming a desktop gets to write.
 
 ## Why not simply stream the desktop
 
@@ -58,6 +69,20 @@ No window titles, no watching for prompts. It matters because a bar that guesses
 wrong is worse than a fixed one: keys that move at the moment you reach for them
 are a hazard, not a convenience.
 
+**And you can teach it your own programs.** Each one is a small YAML file — what
+the key says, what it types, what colour it is — dropped in
+`~/.config/linux-terminal/tools/`. The server re-reads them within a second and
+pushes the new bar to every open session: no restart, no reconnection, no new
+APK. `linux-terminal-server --tools` says what loaded and from where.
+
+```yaml
+match: [lazygit]
+keys:
+  - {label: "c", send: "c", style: cmd,  hint: commit}
+  - {label: "P", send: "P", style: cmd,  hint: push}
+  - {label: "q", send: "q", style: warn, hint: quit}
+```
+
 **The keys that must always be there never move.** Escape, `^C`, `^D`, Tab,
 backspace, `^W`, `^U`, the arrows and Enter live on a fixed half, built once and
 never rebuilt. The Quest's own keyboard has none of them; without them a
@@ -72,10 +97,11 @@ you run yourself — the difference is a URL. See [`docs/voice.md`](docs/voice.m
 
 **It can put an icon in the tray** on a machine you sit at — `--tray` — showing
 how many headsets are connected and what each is doing, with a click through to
-the console. Experimental and off by default: an earlier version refreshed its
-menu on a timer, which GNOME answers by re-reading the whole menu, and that
-froze the desktop. The refresh is edge-triggered now, but the default stays off
-until it has run for a while without incident.
+the console. On where there is a desktop session, and `--tray=false` where you
+do not want it. It was off by default for a while for a good reason: an earlier
+version refreshed its menu on a timer, which GNOME answers by re-reading the
+whole menu, and that froze the desktop. The refresh is edge-triggered now and
+has been quiet since.
 
 **The server has a small web console.** It runs otherwise invisibly as a user
 service, and "is anyone connected, and where does dictation go" should not
@@ -86,27 +112,75 @@ from elsewhere with `ssh -L 9104:localhost:9104`.
 
 ## Install the server
 
+**Take it from the [latest release](https://github.com/vr-meta/linux-terminal/releases/latest)
+— there is nothing to build.** Every release carries a static binary for amd64
+and arm64 and a signed APK, so a machine you install on needs no Go, no JDK and
+no Android SDK.
+
 ```sh
-git clone https://github.com/vr-meta/linux-terminal
-cd linux-terminal
-./install.sh
+case "$(uname -m)" in
+  x86_64)  arch=amd64 ;;
+  aarch64) arch=arm64 ;;
+  *) echo "no release build for $(uname -m)"; exit 1 ;;
+esac
+
+base=https://github.com/vr-meta/linux-terminal/releases/latest/download
+curl -fL -O "$base/linux-terminal-server-linux-$arch"
+curl -fL -O "$base/checksums.txt"
+sha256sum --ignore-missing -c checksums.txt        # must say: OK
+
+sudo install -m 0755 "linux-terminal-server-linux-$arch" /usr/local/bin/linux-terminal-server
+linux-terminal-server --version                    # a version, not a shell error
 ```
 
-That builds a static Go binary, installs it to `/usr/local/bin`, and starts it
-as a **systemd user service** — a user service on purpose: the shells it opens
-are yours, and they inherit your environment, your PATH and your `~/.bashrc`.
+`-f` on curl is not decoration. Without it a 404 writes GitHub's HTML error page
+into the file and you install a 400-byte "binary" that debugs as nonsense.
 
-Go is the only requirement. `PREFIX=~/.local ./install.sh` avoids `sudo`
-entirely; `./install.sh --no-service` just leaves you the binary.
+No `sudo` available: put it in `~/.local/bin` instead, and make sure that is on
+`PATH` in the shell the service will run under.
+
+### Make it survive a reboot
+
+As a **systemd user service**, on purpose: the shells it opens are yours, and
+they inherit your environment, your PATH and your `~/.bashrc`, none of which
+survives being run as root.
 
 ```sh
-make server          # server/linux-terminal-server
-make install         # binary + service
-make run             # in this terminal, no service
+mkdir -p ~/.config/systemd/user
+curl -fL https://raw.githubusercontent.com/vr-meta/linux-terminal/main/packaging/linux-terminal-server.service \
+  | sed -e "s|@BINDIR@|/usr/local/bin|" -e "s|@HOME@|$HOME|" \
+  > ~/.config/systemd/user/linux-terminal-server.service
+
+systemctl --user daemon-reload
+systemctl --user enable --now linux-terminal-server
+systemctl --user is-active linux-terminal-server   # active
+```
+
+Two things are skipped here and then cost an evening. **Lingering** — a user
+service dies at logout, and logged out is exactly the state a machine is in when
+you want to reach it from a headset:
+
+```sh
+sudo loginctl enable-linger $USER
+```
+
+And the **firewall**, if there is one: TCP *and* UDP on 9103. TCP carries the
+sessions, UDP carries discovery, so if the headset only connects when you type
+the address by hand, UDP is what is blocked.
+
+```sh
+sudo ufw allow 9103/tcp && sudo ufw allow 9103/udp
 ```
 
 Install it on every machine you want to reach. They all announce themselves the
 same way.
+
+**The server is Linux-only, and not by oversight.** It reads the foreground
+process group off the pty and the working directory out of `/proc`, and neither
+has an equivalent on Windows — the cross-compile is four errors away from
+building and much further away from working.
+[`docs/windows.md`](docs/windows.md) says exactly what a port would have to
+solve, and what to do meanwhile if the machine you want a shell on runs Windows.
 
 ### Ports, chosen once at startup
 
@@ -122,6 +196,10 @@ linux-terminal-server --port 9103 --http 9104 --cwd ~/projects
 | `--cwd` | where shells start |
 | `--tray` | the desktop indicator; on by default where there is a desktop |
 
+The console is off unless asked for, but the service unit above asks for it —
+that is why `http://localhost:9104` works on a machine installed the usual way
+and not on one started by hand without the flag.
+
 The console binds to localhost because it can open a pairing window and revoke a
 headset's access. Reach it from another machine by tunnelling, not by widening
 it:
@@ -132,19 +210,71 @@ ssh -L 9104:localhost:9104 you@the-machine
 
 ## Install the client
 
-```sh
-make apk             # builds and installs on the attached headset
-```
-
-Or by hand:
+The APK is in the same release, signed with the release key, so it needs only
+`adb` and a headset in developer mode.
 
 ```sh
-cd client && ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+curl -fL -O https://github.com/vr-meta/linux-terminal/releases/latest/download/linux-terminal.apk
+adb install -r linux-terminal.apk                  # look for: Success
 ```
 
-Needs JDK 21 and Android SDK 34; put `sdk.dir=` in `client/local.properties`.
+`Performing Streamed Install` on its own means it did **not** finish; `Success`
+is the line that counts. `-r` keeps the servers the app already knows.
+
+If it is refused with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the copy on the
+headset was signed with a different key — almost always a locally built debug
+APK. Uninstalling first is the only way through, and it loses the saved servers:
+
+```sh
+adb uninstall dev.butschster.linuxterminal && adb install linux-terminal.apk
+```
+
 Sideloaded apps live under **Unknown Sources** in the Quest's app library.
+
+### Building both from a clone instead
+
+Only worth it if you are working on it. Go for the server, JDK 21 and Android
+SDK 34 for the client, with `sdk.dir=` in `client/local.properties`.
+
+```sh
+git clone https://github.com/vr-meta/linux-terminal && cd linux-terminal
+./install.sh         # builds, installs, starts the service
+make apk             # builds the client and installs it on the headset
+make run             # server in this terminal, no service
+```
+
+`PREFIX=~/.local ./install.sh` avoids `sudo`; `./install.sh --no-service` leaves
+you just the binary; `./install.sh --uninstall` takes it back out.
+
+## Let Claude Code do it
+
+The repository carries **skills** — written instructions for the tasks above,
+each with the checks that establish a step actually worked rather than merely
+exited 0. Point Claude Code at a machine and say what you want in words.
+
+| Say | Skill | What it knows |
+|---|---|---|
+| "install linux-terminal here" | `install` | fetch the right arch from the latest release, service, lingering, firewall, the APK |
+| "pair my headset" / "why is it refusing" | `pairing` | the six digits, the fingerprint, revoking, and what each failure looks like |
+| "nothing appears in the app" | `diagnose` | rule zero is which binary is actually running; then the port, the headset's wakefulness, the bar, the keys, dictation |
+| "connect to the headset over Wi-Fi" | `headset` | adb by cable and over the network, logs before they are evicted, screenshots off the device |
+| "test this without the headset" | `emulator` | an AVD shaped like a panel, and the whole flow — discover, pair, open a shell — driven from the command line |
+| "add buttons for lazygit" | `new-tool` | the tool-file format, the escapes, hot reload, and why a new file is being ignored |
+| "cut a release" | `release` | dry-run the workflow, tag, verify every artifact and that the binary reports the version |
+
+They live in `.claude/skills/` and are picked up automatically inside a clone.
+To use them on a machine you are only installing onto, copy them into your own
+skills directory — one shallow clone, no build:
+
+```sh
+git clone --depth 1 https://github.com/vr-meta/linux-terminal /tmp/lt
+mkdir -p ~/.claude/skills && cp -r /tmp/lt/.claude/skills/* ~/.claude/skills/
+```
+
+They go further than this page does. A README can say "install it"; a skill has
+to say what to check afterwards, because an agent will otherwise report success
+from a command that exited 0 and left a zero-byte binary behind. Every trap in
+them was hit at least once here first.
 
 ## Pairing a headset, and what it protects
 
@@ -226,6 +356,7 @@ lets them sit next to a browser or anything else.
 | text size | `A−` / `A+` on the bar |
 | the on-screen keyboard | the keyboard button |
 | dictation | the microphone button |
+| which build each side is running | beside the app's name, and on every server's card |
 | who is connected, where voice goes | `http://localhost:9104` on the server |
 | pair another headset | `Headsets` in the console, or `--pair` |
 | unpair a machine | `unpair` on its card in the headset |

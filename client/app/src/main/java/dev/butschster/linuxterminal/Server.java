@@ -27,6 +27,16 @@ public class Server {
     public String os = "";
     public String cwd = "";
 
+    /**
+     * Which build answered: "1.1.0", or "dev" for a server built from a clone.
+     *
+     * <p>Worth a line on the screen because the two halves ship separately and are
+     * not lock-stepped. When they disagree about a message the fault looks like it
+     * belongs to whichever one you happen to be reading, and the cheapest way to
+     * end that argument is to see both numbers at once.
+     */
+    public String version = "";
+
     /** True when this one answered a probe just now, rather than being remembered. */
     public boolean discovered;
 
@@ -64,6 +74,17 @@ public class Server {
         return text.toString();
     }
 
+    /**
+     * The version as a person should read it. A released server says "1.1.0" and
+     * gets a "v"; one built from a clone says "dev", where a "v" would be nonsense
+     * and where the word itself is the useful part — it means nobody can tell you
+     * what is in it.
+     */
+    public String build() {
+        if (version.isEmpty()) return "";
+        return Character.isDigit(version.charAt(0)) ? "v" + version : version;
+    }
+
     // ------------------------------------------------------------------- storage
 
     private static final String PREFS = "servers";
@@ -87,6 +108,7 @@ public class Server {
                 server.user = entry.optString("user", "");
                 server.os = entry.optString("os", "");
                 server.cwd = entry.optString("cwd", "");
+                server.version = entry.optString("version", "");
                 server.token = entry.optString("token", "");
                 server.fingerprint = entry.optString("fingerprint", "");
                 servers.add(server);
@@ -107,6 +129,7 @@ public class Server {
                 entry.put("user", server.user);
                 entry.put("os", server.os);
                 entry.put("cwd", server.cwd);
+                entry.put("version", server.version);
                 entry.put("token", server.token);
                 entry.put("fingerprint", server.fingerprint);
                 array.put(entry);
@@ -128,6 +151,9 @@ public class Server {
                 if (!server.user.isEmpty()) known.user = server.user;
                 if (!server.os.isEmpty()) known.os = server.os;
                 if (!server.cwd.isEmpty()) known.cwd = server.cwd;
+                // Overwritten rather than only filled: a machine that was upgraded
+                // must stop claiming the version it had yesterday.
+                if (!server.version.isEmpty()) known.version = server.version;
                 if (!server.token.isEmpty()) known.token = server.token;
                 if (!server.fingerprint.isEmpty()) known.fingerprint = server.fingerprint;
                 save(context, servers);

@@ -114,6 +114,16 @@ public class Buttons {
      */
     public static int RULE = skin.rule;
 
+    /**
+     * The keyboard mark, from the bundled Material font.
+     *
+     * <p>Lives here rather than in one screen because two windows now need the same
+     * one: the bar's own on-screen-keyboard control, and the button in the terminal
+     * that brings the bar back. They mean the same thing to a person — "the keys" —
+     * and two copies of a codepoint is how they would quietly stop matching.
+     */
+    public static final String ICON_KEYBOARD = "\ue312";
+
     /** Auto-repeat, for arrows and paging. */
     private static final long REPEAT_DELAY_MS = 400;
     private static final long REPEAT_INTERVAL_MS = 90;

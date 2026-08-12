@@ -55,7 +55,10 @@ type Session struct {
 	// Cached so the 4 Hz poll costs two /proc reads and nothing else.
 	lastCwd  string
 	lastTool string
-	cache    *listings
+
+	// Which revision of the tool files this session has already been told about.
+	lastTools uint64
+	cache     *listings
 }
 
 func (s *Server) serveSession(conn net.Conn) {
@@ -83,6 +86,11 @@ func (s *Server) serveSession(conn net.Conn) {
 		"os":    osRelease(),
 		"cwd":   short(s.Cwd),
 		"voice": s.ASR.configured(),
+		// Which build is answering. The discovery packet carries it too, but only
+		// for a machine on this network — a server typed in by address has no
+		// other way to say, and it is the first thing asked when two halves
+		// disagree about a message.
+		"version": version,
 	})
 	session.run()
 }
@@ -391,6 +399,9 @@ func (s *Session) pollContext(done <-chan struct{}) {
 		case <-done:
 			return
 		case <-ticker.C:
+			// Cheap: one stat, and at most once a second however many sessions
+			// are open, because the check is on the set and not on this session.
+			tools.maybeReload()
 			s.pushContext(false)
 		}
 	}

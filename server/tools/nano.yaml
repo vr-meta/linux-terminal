@@ -1,0 +1,12 @@
+# nano names its own keys along the bottom of the screen, so these are only the
+# chords a headset cannot press.
+#
+# ^W is not here, though nano calls it "where is". The client draws ^W on its
+# fixed half already and sends the same byte, so a second one would be the same
+# key in two places — and then neither is the one the hand learns.
+
+match: [nano]
+
+keys:
+  - {label: "^X", send: "\x18", style: warn, hint: exit}
+  - {label: "^O", send: "\x0f", style: cmd,  hint: write}

@@ -51,6 +51,20 @@ android {
             signingConfig = signingConfigs.findByName("release")
                 ?: signingConfigs.getByName("debug")
         }
+
+        // A build for wearing, not for shipping: the debug variant's contents,
+        // signed with the release key.
+        //
+        // It exists because Android refuses an update signed by a different key, and
+        // the headset already carries a properly signed install. The alternative was
+        // to uninstall it, which throws away the paired servers and their tokens and
+        // means pairing every machine again to look at a change.
+        create("concept") {
+            initWith(getByName("debug"))
+            isDebuggable = true
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
+        }
     }
 
     compileOptions {

@@ -1,13 +1,14 @@
 package dev.butschster.linuxterminal;
 
+import android.app.Activity;
 import android.content.Context;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.PopupWindow;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -54,11 +55,15 @@ public class ContextBar extends LinearLayout {
     /** The app's own strip. One button wide: it is a margin, not a third of the bar. */
     private static final int STRIP_WIDTH_DP = 64;
 
-    private static final int BG = Color.rgb(24, 25, 31);
-    private static final int BG_FIXED = Color.rgb(31, 33, 40);
+    // The two plates come from the skin at build time rather than from constants
+    // here: the whole point of a skin is that a plate changes together with the
+    // keys standing on it, and a deck that stayed grey under lit keys would
+    // compare nothing.
 
     private static final String ICON_MIC = "\ue029";
     private static final String ICON_STOP = "\ue047";
+    /** Material's "palette": the only thing on the bar that changes the bar. */
+    private static final String ICON_APPEARANCE = "\ue40a";
 
     // The keyboard mark is shared with the terminal window's button, so it lives in
     // Buttons rather than here \u2014 see the note there.
@@ -81,6 +86,18 @@ public class ContextBar extends LinearLayout {
     private final FlowLayout toolKeys;
     private View divider;
 
+    /** Non-null only on a skin with displays: the column the screens are stacked in. */
+    private LinearLayout stack;
+
+    /** Console layout only: the listing, the chip column and the two mini screens. */
+    private FlowLayout rows;
+    private FlowLayout projects;
+    private View browserBox;
+    private View projectBox;
+    private View commandBox;
+    private LinearLayout chipColumn;
+    private LinearLayout shortcuts;
+
     private LinearLayout left;
     private LinearLayout right;
     private LinearLayout recordingRow;
@@ -95,11 +112,36 @@ public class ContextBar extends LinearLayout {
     public ContextBar(Context context, Host host) {
         super(context);
         this.host = host;
+        // Before the first drawable is asked for: every background on this panel is
+        // built from the skin as the view is constructed, so a skin restored one
+        // line later would apply to nothing that has already been made.
+        Appearance.restore(context);
         Typeface icons = Typeface.createFromAsset(context.getAssets(), "MaterialIcons-Regular.ttf");
         this.buttons = new Buttons(context, icons);
 
         setOrientation(HORIZONTAL);
-        setBackgroundColor(BG);
+        setBackground(Buttons.deck(false));
+
+        // The four views every layout needs, built before either branch claims
+        // them: the two lines of the status, the flow of tool keys, and the flow
+        // the older skins put their groups in. Which container they end up inside
+        // is what the layouts disagree about; that they exist is not.
+        where = label(path, Buttons.TEXT, 16);
+        where.setTypeface(Fonts.mono(context));
+        where.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        where.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+
+        what = label("", Buttons.MUTED, 15);
+        what.setTypeface(Fonts.mono(context));
+        what.setPadding(buttons.dp(10), 0, buttons.dp(8), 0);
+
+        dynamic = new FlowLayout(context, buttons.gap());
+        toolKeys = new FlowLayout(context, buttons.gap());
+
+        if (Buttons.skin().kind == Skin.Kind.CONSOLE) {
+            buildConsole(context);
+            return;
+        }
 
         // ---------------------------------------------------------- left: dynamic
 
@@ -111,25 +153,38 @@ public class ContextBar extends LinearLayout {
         left.setPadding(0, buttons.dp(8), 0, buttons.dp(8));
         addView(left, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
 
+        boolean screens = Buttons.skin().displays;
+
         LinearLayout status = new LinearLayout(context);
         status.setOrientation(HORIZONTAL);
         status.setGravity(Gravity.CENTER_VERTICAL);
         status.setPadding(buttons.dp(10), 0, buttons.dp(6), 0);
-        left.addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        if (screens) {
+            // The first display, and the one that is only ever read: where you are.
+            // It was already text-only — nothing on this line has ever been
+            // pressable — so putting it behind glass says out loud what the layout
+            // was already doing quietly.
+            status.setBackground(buttons.display());
+            status.setPadding(buttons.dp(14), buttons.dp(9), buttons.dp(14), buttons.dp(9));
+            LayoutParams inset = new LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            inset.setMargins(buttons.inset(), 0, buttons.inset(), buttons.dp(8));
+            left.addView(status, inset);
+        } else {
+            left.addView(status,
+                    new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
 
         // Text only — nothing here is pressable. A status line that can be clicked
         // is a row of accidental targets above the row you were aiming at.
-        where = label(path, Buttons.TEXT, 16);
-        where.setTypeface(Typeface.MONOSPACE);
-        where.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-        where.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        where.setTextColor(screens ? Buttons.skin().phosphor : Buttons.TEXT);
         status.addView(where, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
-        what = label("", Buttons.MUTED, 15);
-        what.setPadding(buttons.dp(10), 0, 0, 0);
+        // Dimmer phosphor rather than grey: a second colour inside one display
+        // would read as a second display. Same lamp, less of it.
+        what.setTextColor(screens ? dim(Buttons.skin().phosphor, 0.62f) : Buttons.MUTED);
         status.addView(what);
 
-        dynamic = new FlowLayout(context, buttons.gap());
         dynamic.setPadding(buttons.inset(), buttons.dp(2), buttons.inset(), 0);
         // The rules are drawn past this padding, out to the panel's own edges.
         // Both flags are needed and they are not the same thing: clipToPadding
@@ -139,8 +194,19 @@ public class ContextBar extends LinearLayout {
         dynamic.setClipToPadding(false);
         dynamic.setClipChildren(false);
         ScrollView dynamicScroll = new ScrollView(context);
-        dynamicScroll.addView(dynamic, new ScrollView.LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        if (screens) {
+            // One display per group, stacked. The flow layout is still built and
+            // still holds the buttons — it just moves inside a screen instead of
+            // sitting on the plate, so setContext keeps one way of filling it.
+            stack = new LinearLayout(context);
+            stack.setOrientation(VERTICAL);
+            stack.setPadding(buttons.inset(), 0, buttons.inset(), 0);
+            dynamicScroll.addView(stack, new ScrollView.LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        } else {
+            dynamicScroll.addView(dynamic, new ScrollView.LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
         left.addView(dynamicScroll, new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f));
 
         // ---------------------------------------------------------- right: fixed
@@ -151,7 +217,7 @@ public class ContextBar extends LinearLayout {
 
         right = new LinearLayout(context);
         right.setOrientation(VERTICAL);
-        right.setBackgroundColor(BG_FIXED);
+        right.setBackground(Buttons.deck(true));
         // No horizontal padding on the panel, for the same reason the left one has
         // none: a rule that stops short of the edge looks like a mistake. What
         // needs the inset takes it individually, and then everything below a rule
@@ -181,7 +247,6 @@ public class ContextBar extends LinearLayout {
                 new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         // The same inset the keys above it have, so the two blocks share an edge.
-        toolKeys = new FlowLayout(context, buttons.gap());
         // The same gap below the rule as above it. Two above and eight below is
         // not a rhythm, it is a rule that has slid into the row underneath.
         // Its children carry no margins of their own, so it takes the inset whole.
@@ -210,13 +275,18 @@ public class ContextBar extends LinearLayout {
 
         LinearLayout controls = new LinearLayout(context);
         controls.setOrientation(VERTICAL);
-        controls.setBackgroundColor(BG_FIXED);
+        controls.setBackground(Buttons.deck(true));
         controls.setPadding(buttons.dp(6), buttons.dp(8), buttons.dp(6), buttons.dp(8));
         addView(controls, new LayoutParams(buttons.dp(STRIP_WIDTH_DP), LayoutParams.MATCH_PARENT));
 
-        addControl(controls, buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate()));
-        addControl(controls, buttons.icon(ICON_KEYBOARD, Buttons.COMMAND, "on-screen keyboard",
-                v -> host.onKeyboard()));
+        // Dictation and the keyboard as one block on every skin, not only on the
+        // console one. They answer the same question — how does text get into the
+        // line — and a cluster says so without implying, as a rocker would, that
+        // one is a direction of the other.
+        addControl(controls, buttons.cluster(true,
+                buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate()),
+                buttons.icon(ICON_KEYBOARD, Buttons.COMMAND, "on-screen keyboard",
+                        v -> host.onKeyboard())));
         // Up over down, everywhere on this strip: in every rocker here the upper
         // half is the one that moves away from where you are.
         //
@@ -244,6 +314,8 @@ public class ContextBar extends LinearLayout {
         addControl(controls, buttons.rocker(
                 buttons.half("A+", "larger text", v -> host.onFontStep(2)),
                 buttons.half("A\u2212", "smaller text", v -> host.onFontStep(-2))));
+
+        addControl(controls, appearanceKey());
 
         // Descriptions ride on the buttons themselves. A hint printed somewhere
         // else — a line under the keys, the path at the top of another panel — is a
@@ -274,7 +346,7 @@ public class ContextBar extends LinearLayout {
                 new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
         timer = label("0:00", Buttons.TEXT, 22);
-        timer.setTypeface(Typeface.MONOSPACE);
+        timer.setTypeface(Fonts.mono(context));
         timer.setPadding(0, 0, buttons.dp(20), 0);
         under.addView(timer);
 
@@ -301,6 +373,97 @@ public class ContextBar extends LinearLayout {
         View view = buttons.glyphHalf(kind, hint, v -> host.onAction(bytes, false));
         buttons.repeatOnHold(view, () -> host.onAction(bytes, false));
         return view;
+    }
+
+    /**
+     * The one control on this panel that is about the panel.
+     *
+     * <p>It sits on the strip with the other things that are the client's own and
+     * are never sent to the shell, and it is on that strip in <em>both</em>
+     * arrangements — the console rail and the older skins' controls. A way out of a
+     * skin has to exist inside every skin, or choosing one of them once is choosing
+     * it forever.
+     */
+    private View appearanceKey() {
+        return buttons.icon(ICON_APPEARANCE, Buttons.DESTINATION,
+                "how this panel looks", this::showAppearance);
+    }
+
+    /**
+     * The skins, offered where the person wearing the headset is.
+     *
+     * <p>Drawn from this panel's own parts rather than as a {@code PopupMenu}: the
+     * system menu is a light rectangle with a system typeface, and at half a metre
+     * it arrives as a piece of another application landing on top of this one.
+     *
+     * <p>Placed at the centre of the bar rather than under the button that opened
+     * it. The strip it is opened from is a few keys wide and at the edge of the
+     * window, so a dropdown either overflows the window or is squeezed into the
+     * strip's width; the panel's middle is somewhere the ray is already pointing.
+     */
+    private void showAppearance(View anchor) {
+        Skin skin = Buttons.skin();
+
+        LinearLayout menu = new LinearLayout(getContext());
+        menu.setOrientation(VERTICAL);
+        menu.setBackground(buttons.section(true));
+        int pad = buttons.dp(12);
+        menu.setPadding(pad, pad, pad, pad);
+
+        TextView caption = label("APPEARANCE", skin.heading, 12);
+        caption.setLetterSpacing(0.10f);
+        caption.setPadding(buttons.dp(8), 0, 0, buttons.dp(8));
+        menu.addView(caption);
+
+        PopupWindow popup = new PopupWindow(menu, buttons.dp(320),
+                LayoutParams.WRAP_CONTENT, true);
+        // Dismissed by pressing away from it: a menu with no way out but a choice
+        // is a menu that cannot be opened out of curiosity.
+        popup.setOutsideTouchable(true);
+
+        String current = Appearance.chosen(getContext());
+        for (Appearance.Choice choice : Appearance.CHOICES) {
+            menu.addView(appearanceRow(choice, choice.id.equals(current), popup),
+                    new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
+
+        popup.showAtLocation(this, Gravity.CENTER, 0, 0);
+    }
+
+    private View appearanceRow(Appearance.Choice choice, boolean active, PopupWindow popup) {
+        Skin skin = Buttons.skin();
+
+        LinearLayout row = new LinearLayout(getContext());
+        row.setOrientation(VERTICAL);
+        row.setPadding(buttons.dp(8), buttons.dp(8), buttons.dp(8), buttons.dp(8));
+        row.setClickable(true);
+        row.setBackground(buttons.rowSelection());
+
+        // The mark, not a tick in a second column: the listing on this panel already
+        // says "this one" with a caret in front of the name, and one language for
+        // "you are here" is worth more than a prettier tick.
+        TextView name = label((active ? "▸ " : "   ") + choice.name,
+                active ? skin.accentGo : Buttons.TEXT, 16);
+        name.setTypeface(Fonts.mono(getContext()));
+        row.addView(name);
+
+        TextView note = label("   " + choice.note, Buttons.MUTED, 12);
+        note.setTypeface(Fonts.mono(getContext()));
+        row.addView(note);
+
+        row.setOnClickListener(v -> {
+            popup.dismiss();
+            if (active) return;
+            Appearance.choose(getContext(), choice);
+            // The whole panel is built from the skin as its views are constructed,
+            // so there is nothing to repaint — the window is made again instead.
+            // A terminal window already up keeps the look it was built with until
+            // it is next opened, which is the honest consequence of building the
+            // look once rather than watching for it.
+            Context context = getContext();
+            if (context instanceof Activity) ((Activity) context).recreate();
+        });
+        return row;
     }
 
     private void addControl(LinearLayout strip, View view) {
@@ -363,6 +526,17 @@ public class ContextBar extends LinearLayout {
             }
         }
         hint(toolKeys, null);
+
+        if (rows != null) {
+            fillConsole(groups);
+            return;
+        }
+
+        if (stack != null) {
+            buildScreens(groups);
+            return;
+        }
+
         for (int i = 0; i < groups.length(); i++) {
             JSONObject group = groups.optJSONObject(i);
             if (group == null) continue;
@@ -382,7 +556,7 @@ public class ContextBar extends LinearLayout {
             // for what follows rather than a line competing with the buttons. The
             // rule carries the separation, so the heading does not have to.
             TextView heading = label(group.optString("name").toUpperCase(Locale.ROOT),
-                    Buttons.MUTED, 9);
+                    Buttons.skin().heading, 9);
             heading.setPadding(0, buttons.dp(1), buttons.dp(10), buttons.dp(1));
             heading.setLetterSpacing(0.12f);
             heading.setTag(FlowLayout.BREAK);
@@ -406,6 +580,627 @@ public class ContextBar extends LinearLayout {
             }
         }
         hint(dynamic, where);
+    }
+
+    // --------------------------------------------------------------- console
+
+    /**
+     * The console arrangement, built from this bar's own parts.
+     *
+     * <p>The layout is borrowed; the contents are not. The keypad here is the real
+     * {@link KeyPad} — the same keys, built once, that never move — and the
+     * shortcuts are whatever the host sent for the program in front, not a fixed
+     * list of Claude's chords. A concept that hardcoded either would prove nothing
+     * about this bar: the whole design rests on the host deciding what is offered,
+     * and a mock that decides for itself is a different product.
+     *
+     * <p>What the arrangement changes is where a thing lives, and the rule is what
+     * kind of thing it is. Read on the left, pressed in the middle, and the app's
+     * own controls on a rail at the edge.
+     */
+    private void buildConsole(Context context) {
+        setPadding(buttons.dp(12), buttons.dp(12), buttons.dp(12), buttons.dp(12));
+
+        // ---- read
+        LinearLayout reading = new LinearLayout(context);
+        reading.setOrientation(VERTICAL);
+        addView(reading, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1.35f));
+
+        // The head is its own screen, the full width of the column and with no
+        // section around it. It answers a different question from the listing —
+        // "where am I" against "where could I go" — and wrapping the two in one
+        // housing said they were one instrument. Nothing else on the panel is
+        // unwrapped, which is what makes this one read as the panel's own readout.
+        LinearLayout head = new LinearLayout(context);
+        head.setOrientation(HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setBackground(buttons.display());
+        head.setPadding(buttons.dp(14), buttons.dp(10), buttons.dp(14), buttons.dp(10));
+        // The header is a screen, so it is written by the same beam as the screens
+        // under it. It was inheriting the panel's neutral text and dim grey from
+        // the constructor, which put two colours behind one piece of glass — the
+        // exact fault fixed once already for the typeface, arriving again through
+        // the palette.
+        where.setTextColor(Buttons.skin().phosphor);
+        what.setTextColor(Buttons.skin().phosphorDim);
+        // And the same bloom. The header was the one lit surface drawing its text
+        // flat: the colour had been fixed, the beam had not, so it read as green
+        // ink rather than as a lit line.
+        buttons.bloom(where, Buttons.skin().phosphor);
+        buttons.bloom(what, Buttons.skin().phosphorDim);
+        head.addView(where, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+        head.addView(what);
+        head.addView(new Led(context, Buttons.skin().accentGo, true),
+                new LayoutParams(buttons.dp(9), buttons.dp(9)));
+        LayoutParams headParams = new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        headParams.bottomMargin = buttons.dp(12);
+        reading.addView(head, headParams);
+
+        // No plate around the listings. The glass is already a housing, and a box
+        // around a box at nearly the same radius reads as a framing error — two
+        // walls 10dp apart, the outer one only 2% brighter than the panel, which
+        // through the lenses is the same colour. The caption stays; it is engraved
+        // on the panel, which is where a label belongs.
+        LinearLayout browser = captioned(context, "directory browser",
+                consoleScreen(context));
+        addElastic(reading, browser);
+        browserBox = browser;
+
+        projects = new FlowLayout(context, 0);
+        projects.setPadding(buttons.dp(6), buttons.dp(6), buttons.dp(6), buttons.dp(6));
+        projects.setClipChildren(false);
+        projects.setClipToPadding(false);
+        ScrollView projectScroll = elasticScroll(context);
+        projectScroll.setBackground(buttons.display());
+        projectScroll.setClipChildren(false);
+        projectScroll.addView(projects, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        LinearLayout projectBox = captioned(context, "projects", projectScroll);
+        addElastic(reading, projectBox);
+        this.projectBox = projectBox;
+
+        // Last in the column and the last thing to give up room, which is the
+        // opposite of how it was built.
+        //
+        // The commands had the weight and the two listings above them did not, so
+        // the listings took what their contents asked for — up to 230dp each — and
+        // the commands were handed whatever was left. In a column 460dp tall there
+        // was nothing left: `claude`, `codex`, `git status` and the rest measured to
+        // zero height and simply were not on the panel. They had not been removed,
+        // they had been pushed off the bottom by two directories.
+        LinearLayout commandBox = captioned(context, "commands", null);
+        chipColumn = new LinearLayout(context);
+        chipColumn.setOrientation(VERTICAL);
+        ScrollView chipScroll = elasticScroll(context, 200);
+        chipScroll.addView(chipColumn, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        commandBox.addView(chipScroll, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        addSection(reading, commandBox, 0f);
+        this.commandBox = commandBox;
+
+        addView(gap(context, 12), new LayoutParams(buttons.dp(12), LayoutParams.MATCH_PARENT));
+
+        // ---- press
+        //
+        // The keypad is OUTSIDE the scroller and the shortcuts are inside it, and
+        // that split is the whole point of this column.
+        //
+        // The first version put both in one ScrollView. The keypad is still built
+        // once and never rebuilt — the rule everyone checks — and it still moved:
+        // when the host sent enough shortcuts to overflow the column, scrolling
+        // down to reach a chord carried Enter and ^C up and off the panel. That is
+        // the Touch Bar's failure arriving through the scroll container instead of
+        // through the layout order, and the fixed half's guarantee is about where
+        // the keys ARE, not about how often they are constructed.
+        LinearLayout pressing = new LinearLayout(context);
+        pressing.setOrientation(VERTICAL);
+        addView(pressing, new LayoutParams(0, LayoutParams.MATCH_PARENT, 0.95f));
+
+        LinearLayout control = consoleSection(context, "terminal control", true);
+        KeyPad pad = new KeyPad(context, buttons, text -> host.onAction(text, false));
+        control.addView(pad, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        addSection(pressing, control, 0f);
+
+        shortcuts = consoleSection(context, "shortcuts", false);
+        ScrollView shortcutScroll = new ScrollView(context);
+        shortcutScroll.addView(toolKeys, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        shortcuts.addView(shortcutScroll, new LayoutParams(
+                LayoutParams.MATCH_PARENT, 0, 1f));
+        LayoutParams shortcutParams = new LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f);
+        shortcutParams.bottomMargin = buttons.dp(12);
+        pressing.addView(shortcuts, shortcutParams);
+
+        addView(gap(context, 12), new LayoutParams(buttons.dp(12), LayoutParams.MATCH_PARENT));
+
+        // ---- the app's own
+        addView(consoleRail(context), new LayoutParams(
+                buttons.dp(86), LayoutParams.MATCH_PARENT));
+    }
+
+    /** The screen: nothing but the listing, in columns. */
+    private View consoleScreen(Context context) {
+        rows = new FlowLayout(context, 0);
+        rows.setPadding(buttons.dp(6), buttons.dp(6), buttons.dp(6), buttons.dp(6));
+        // A bloom is drawn outside the letter, so every container between the text
+        // and the screen has to stop clipping — otherwise the glow ends in a hard
+        // vertical line at the cell's edge, which is what a lit row was doing here
+        // while the same effect looked right on the other skins, where the row is
+        // the full width of the screen and the clip falls outside the glow.
+        rows.setClipChildren(false);
+        rows.setClipToPadding(false);
+        ScrollView scroll = elasticScroll(context);
+        scroll.setBackground(buttons.display());
+        scroll.setClipChildren(false);
+        scroll.addView(rows, new ScrollView.LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        return scroll;
+    }
+
+    /**
+     * A screen that is as tall as what is on it, up to a ceiling.
+     *
+     * <p>Two directories should not be given the same height as twenty. A weight
+     * would divide the column by a ratio decided when the panel was built, which is
+     * exactly the wrong time to decide it — how many entries a directory has is
+     * known only when the host says so, and it changes on every `cd`.
+     *
+     * <p>The ceiling matters as much as the elasticity: a home directory with sixty
+     * entries would otherwise push the commands and the readouts off the panel
+     * entirely. Past it the listing scrolls, which is the behaviour a listing
+     * should have had anyway.
+     */
+    private ScrollView elasticScroll(Context context) {
+        return elasticScroll(context, 230);
+    }
+
+    /**
+     * The same, with the ceiling stated. The commands take a lower one: a chip is
+     * shorter than a listing row, so 200dp is already five or six rows of them, and
+     * anything past that is a wall of buttons rather than a section of the panel.
+     */
+    private ScrollView elasticScroll(Context context, int ceilingDp) {
+        return new ScrollView(context) {
+            @Override
+            protected void onMeasure(int widthSpec, int heightSpec) {
+                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(
+                        buttons.dp(ceilingDp), MeasureSpec.AT_MOST));
+            }
+        };
+    }
+
+    /**
+     * The rail: everything that moves you through text, as rockers.
+     *
+     * <p>All three pairs live here rather than being split between an edge rail and
+     * a navigation block in the middle. Paging, scrolling and text size are one
+     * intention — move me through this, or change how much of it I see — and a
+     * rocker is what says two actions are the same decision taken twice.
+     */
+    private View consoleRail(Context context) {
+        LinearLayout rail = new LinearLayout(context);
+        rail.setOrientation(VERTICAL);
+        rail.setBackground(buttons.section(true));
+        rail.setPadding(buttons.dp(8), buttons.dp(10), buttons.dp(8), buttons.dp(10));
+
+        // Dictation and the keyboard are buttons, not levers.
+        //
+        // A lever states a position you set and leave; these two are momentary —
+        // you press to start talking, and you press to summon a keyboard that
+        // dismisses itself. Drawing them as switches promised a state they do not
+        // hold. The sticky-modifier lever is gone outright: nothing in the client
+        // implements it, and a control that latches nothing is a lie with a hinge.
+        // One block, because they are one question: how does text get into the
+        // line. Not a rocker — neither is a direction of the other, and pressing
+        // one must not suggest the pair tilts. A cluster says "these belong
+        // together" while leaving each cap its own face to be pressed.
+        TextView mic = buttons.icon(ICON_MIC, Buttons.VOICE, "dictate", v -> host.onDictate());
+        mic.setTextSize(TypedValue.COMPLEX_UNIT_DIP, buttons.iconSizeDp() + 6);
+        TextView keyboard = buttons.icon(ICON_KEYBOARD, Buttons.DESTINATION,
+                "on-screen keyboard", v -> host.onKeyboard());
+        keyboard.setTextSize(TypedValue.COMPLEX_UNIT_DIP, buttons.iconSizeDp() + 4);
+
+        View input = buttons.cluster(true, mic, keyboard);
+        LayoutParams inputParams = new LayoutParams(
+                LayoutParams.MATCH_PARENT, buttons.dp(104));
+        inputParams.bottomMargin = buttons.dp(10);
+        rail.addView(input, inputParams);
+
+        View pageUp = pageKey(Glyphs.Kind.PAGE_UP, ESC + "[5~", "page up, inside the program");
+        View pageDown = pageKey(Glyphs.Kind.PAGE_DOWN, ESC + "[6~", "page down, inside the program");
+        rail.addView(railRocker(context, pageUp, pageDown));
+
+        View back = buttons.glyphHalf(Glyphs.Kind.UP, "scroll this window back",
+                v -> host.onScroll(-10));
+        buttons.repeatOnHold(back, () -> host.onScroll(-10));
+        View forward = buttons.glyphHalf(Glyphs.Kind.DOWN, "scroll this window forward",
+                v -> host.onScroll(10));
+        buttons.repeatOnHold(forward, () -> host.onScroll(10));
+        rail.addView(railRocker(context, back, forward));
+
+        rail.addView(railRocker(context,
+                buttons.half("A+", "larger text", v -> host.onFontStep(2)),
+                buttons.half("A\u2212", "smaller text", v -> host.onFontStep(-2))));
+
+        rail.addView(appearanceKey(), new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+
+        hint(rail, null);
+        return rail;
+    }
+
+    /** A single control on the rail, at the height its job deserves. */
+    private View railControl(View view, int heightDp) {
+        LayoutParams params = new LayoutParams(
+                LayoutParams.MATCH_PARENT, buttons.dp(heightDp));
+        params.bottomMargin = buttons.dp(10);
+        view.setLayoutParams(params);
+        return view;
+    }
+
+    private View railRocker(Context context, View top, View bottom) {
+        View rocker = buttons.rocker(top, bottom);
+        LayoutParams params = new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = buttons.dp(10);
+        rocker.setLayoutParams(params);
+        return rocker;
+    }
+
+    /**
+     * Add a section to a column, with the gap between sections.
+     *
+     * <p>It exists because the obvious way silently does not work: a section sets
+     * its own {@code bottomMargin} in the constructor, and then {@code addView}
+     * with fresh {@code LayoutParams} throws those away — the parameters passed at
+     * add time replace the view's own. Every section on the panel was flush
+     * against the next one for exactly that reason. Routing every add through here
+     * means the gap is applied where it survives.
+     */
+    /**
+     * A section that is as tall as its contents, and is the one that gives way when
+     * the column is too short for everything on it.
+     *
+     * <p>WRAP_CONTENT <em>with</em> a weight, which is a combination that looks like
+     * a contradiction and is not: the weight applies to what is left over after
+     * every child has been measured, and when that leftover is negative — the column
+     * is over-full — it is taken back from the children that carry weight. So the
+     * listings stay content-driven while there is room, and are the ones squeezed
+     * when there is not. A section added with {@link #addSection} keeps its height
+     * either way.
+     */
+    private void addElastic(LinearLayout column, View section) {
+        LayoutParams params = new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, 1f);
+        params.bottomMargin = buttons.dp(12);
+        column.addView(section, params);
+    }
+
+    private void addSection(LinearLayout column, View section, float weight) {
+        LayoutParams params = weight > 0
+                ? new LayoutParams(LayoutParams.MATCH_PARENT, 0, weight)
+                : new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = buttons.dp(12);
+        column.addView(section, params);
+    }
+
+    /**
+     * A caption engraved on the panel with its content beneath it, and no plate.
+     *
+     * <p>For anything that is already a housing of its own — a screen, a scroller
+     * full of chips. What a plate buys is the statement "these belong together",
+     * and a screen makes that statement by being a screen.
+     */
+    private LinearLayout captioned(Context context, String caption, View content) {
+        LinearLayout box = new LinearLayout(context);
+        box.setOrientation(VERTICAL);
+
+        TextView label = label(caption.toUpperCase(Locale.ROOT), Buttons.skin().heading, 12);
+        label.setLetterSpacing(0.10f);
+        label.setPadding(buttons.dp(2), buttons.dp(2), 0, buttons.dp(7));
+        box.addView(label);
+
+        if (content != null) {
+            box.addView(content, new LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
+        return box;
+    }
+
+    private LinearLayout consoleSection(Context context, String caption, boolean fixed) {
+        LinearLayout box = new LinearLayout(context);
+        box.setOrientation(VERTICAL);
+        box.setBackground(buttons.section(fixed));
+        box.setPadding(buttons.dp(10), buttons.dp(10), buttons.dp(10), buttons.dp(10));
+
+        // 12dp and half the tracking. At 9dp with 0.18 tracking these were the
+        // least readable text on a surface whose regions they exist to name — and
+        // wide tracking makes it worse, because it destroys word shape, which is
+        // the only cue left once a glyph is too small to read letter by letter.
+        TextView label = label(caption.toUpperCase(Locale.ROOT), Buttons.skin().heading, 12);
+        label.setLetterSpacing(0.10f);
+        label.setPadding(buttons.dp(2), buttons.dp(2), 0, buttons.dp(9));
+        box.addView(label);
+
+        return box;
+    }
+
+    private View gap(Context context, int dp) {
+        View view = new View(context);
+        view.setLayoutParams(new LayoutParams(buttons.dp(dp), buttons.dp(1)));
+        return view;
+    }
+
+    /**
+     * Fill the console layout: two listings and a column of chips.
+     *
+     * <p>The split between the two listings is by what the action <em>is</em>, not
+     * by which group it arrived in. A directory is a step down from where you are;
+     * a favourite is a jump to somewhere else entirely — different distances,
+     * different risk of hitting the wrong one, and the host already marks them
+     * apart as {@code dir} against {@code fav}. Reading that instead of the group
+     * name also means a host that renames a group does not silently move its
+     * contents onto the wrong screen.
+     */
+    private void fillConsole(JSONArray groups) {
+        rows.removeAllViews();
+        projects.removeAllViews();
+        chipColumn.removeAllViews();
+
+        for (int i = 0; i < groups.length(); i++) {
+            JSONObject group = groups.optJSONObject(i);
+            if (group == null) continue;
+            JSONArray actions = group.optJSONArray("actions");
+            if (actions == null || actions.length() == 0) continue;
+
+            boolean places = true;
+            for (int j = 0; j < actions.length(); j++) {
+                JSONObject action = actions.optJSONObject(j);
+                if (action != null && !isKeystroke(action)) places &= isPlace(action);
+            }
+
+            if (places) {
+                for (int j = 0; j < actions.length(); j++) {
+                    JSONObject action = actions.optJSONObject(j);
+                    if (action == null || isKeystroke(action)) continue;
+                    boolean bookmark = "fav".equals(action.optString("style", "key"));
+                    (bookmark ? projects : rows).addView(consoleRow(action));
+                }
+                continue;
+            }
+
+            TextView caption = label(group.optString("name").toUpperCase(Locale.ROOT),
+                    Buttons.skin().heading, 12);
+            caption.setLetterSpacing(0.10f);
+            caption.setPadding(buttons.dp(2), buttons.dp(6), 0, buttons.dp(6));
+            chipColumn.addView(caption);
+
+            FlowLayout flow = new FlowLayout(getContext(), buttons.gap());
+            for (int j = 0; j < actions.length(); j++) {
+                JSONObject action = actions.optJSONObject(j);
+                if (action == null || isKeystroke(action)) continue;
+                String label = action.optString("label");
+                String send = action.optString("send");
+                boolean enter = action.optBoolean("enter");
+                boolean danger = "warn".equals(action.optString("style", "key"));
+                View chip = buttons.chip(label, danger, v -> host.onAction(send, enter));
+                String hint = action.isNull("hint") ? null : action.optString("hint");
+                if (hint != null && !hint.isEmpty()) chip.setContentDescription(hint);
+                flow.addView(chip);
+            }
+            chipColumn.addView(flow, new LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
+        }
+
+        // A section with nothing in it is not a section, it is a hole.
+        //
+        // With a program in front the host sends its keys and its skills and stops
+        // sending directories — there is nowhere to cd to from inside Claude Code —
+        // so the two reading screens would sit empty, taking the height the chips
+        // need. Hiding them gives that height back, and it happens by itself
+        // because it follows from what arrived rather than from knowing the name
+        // of the tool.
+        boolean anywhereToGo = rows.getChildCount() > 0;
+        boolean anyProjects = projects.getChildCount() > 0;
+        browserBox.setVisibility(anywhereToGo ? VISIBLE : GONE);
+        projectBox.setVisibility(anyProjects ? VISIBLE : GONE);
+        // And by the same rule the section that holds them: a caption over nothing
+        // is a section that failed to load, which is not what an empty one means.
+        commandBox.setVisibility(chipColumn.getChildCount() > 0 ? VISIBLE : GONE);
+
+        hint(chipColumn, where);
+    }
+
+    /** One line of the listing: a mark, the name, and what it is. */
+    private View consoleRow(JSONObject action) {
+        String send = action.optString("send");
+        boolean enter = action.optBoolean("enter");
+        String style = action.optString("style", "key");
+        boolean up = "up".equals(style);
+        String name = up ? ".." : action.optString("label");
+
+        // A cell, not a full-width line. `ls` prints a short listing in columns and
+        // so does this: one name per line filled the screen with six directories
+        // and pushed everything under it off the panel. The cell has a minimum
+        // width so the columns line up; a longer name takes what it needs and the
+        // next column starts later, which is again what `ls` does.
+        LinearLayout row = new LinearLayout(getContext()) {
+            @Override
+            protected void onMeasure(int widthSpec, int heightSpec) {
+                super.onMeasure(widthSpec, heightSpec);
+                int min = buttons.dp(150);
+                if (getMeasuredWidth() < min) {
+                    setMeasuredDimension(min, getMeasuredHeight());
+                }
+            }
+        };
+        row.setOrientation(HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(buttons.dp(8), buttons.dp(4), buttons.dp(8), buttons.dp(4));
+        row.setClickable(true);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+        row.setBackground(buttons.rowSelection());
+
+        TextView mark = label(up ? "\u2191" : "\u25b8", Buttons.skin().phosphorDim, 11);
+        mark.setTypeface(Fonts.mono(getContext()));
+        mark.setWidth(buttons.dp(16));
+        row.addView(mark);
+
+        TextView title = label(name, 0xFF39D863, 14);
+        title.setTypeface(Fonts.mono(getContext()));
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        // Room inside the view for the glow to land in. Clipping is off above, but
+        // a TextView still paints its shadow within its own bounds, so without the
+        // padding the spread has nowhere to go on the side the name ends at.
+        title.setPadding(0, buttons.dp(3), buttons.dp(8), buttons.dp(3));
+        LayoutParams grow = new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f);
+        grow.setMarginStart(buttons.dp(8));
+        row.addView(title, grow);
+
+        // No "dir" / "proj" column any more. It was there when one listing held
+        // both kinds; with a screen each, the label repeated what the heading above
+        // it had already said — and in a narrow column it ended up jammed against
+        // the name it was describing.
+
+        String hint = action.isNull("hint") ? null : action.optString("hint");
+        if (hint != null && !hint.isEmpty()) row.setContentDescription(hint);
+
+        // The listener goes on the row, not on the text.
+        //
+        // It was on the text and never fired: the row is what is clickable, so the
+        // row is what the ray hovers, and a TextView inside it that is neither
+        // clickable nor focusable is not asked about hover at all. Same effect,
+        // one level up — the row hears it and turns up the beam on its own label.
+        buttons.glowOnHover(row, title, 0xFF39D863);
+        row.setOnClickListener(v -> host.onAction(send, enter));
+        return row;
+    }
+
+    // ---------------------------------------------------------------- screens
+
+    /**
+     * One display per group of places, and ordinary keys for everything else.
+     *
+     * <p>The split is by what the group is, not by which group it happens to be.
+     * A directory, a project, the parent — those are read and then chosen from,
+     * which is a list on a screen. `claude`, `git status`, `^R` are things that
+     * happen when pressed, and a thing that happens is a key. Putting the second
+     * kind behind glass would be the same mistake as making the first kind look
+     * pressable, in the other direction.
+     */
+    private void buildScreens(JSONArray groups) {
+        stack.removeAllViews();
+        for (int i = 0; i < groups.length(); i++) {
+            JSONObject group = groups.optJSONObject(i);
+            if (group == null) continue;
+            JSONArray actions = group.optJSONArray("actions");
+            if (actions == null || actions.length() == 0) continue;
+
+            java.util.List<JSONObject> shown = new java.util.ArrayList<>();
+            boolean allPlaces = true;
+            for (int j = 0; j < actions.length(); j++) {
+                JSONObject action = actions.optJSONObject(j);
+                if (action == null || isKeystroke(action)) continue;   // drawn on the other side
+                shown.add(action);
+                allPlaces &= isPlace(action);
+            }
+            if (shown.isEmpty()) continue;
+
+            // Engraved into the plate above the screen, not printed inside it. A
+            // label inside the glass would be one more lit thing to read past on
+            // the way to the list it names.
+            TextView heading = label(group.optString("name").toUpperCase(Locale.ROOT),
+                    Buttons.MUTED, 9);
+            heading.setLetterSpacing(0.14f);
+            heading.setPadding(buttons.dp(3), buttons.dp(4), 0, buttons.dp(3));
+            stack.addView(heading);
+
+            boolean asListing = allPlaces && Buttons.skin().listing;
+
+            android.view.ViewGroup items;
+            if (asListing) {
+                // Columns, the way `ls` prints them, not one name per line. A
+                // single column of six directories filled the whole panel and
+                // pushed the projects off the bottom — and it was not even what a
+                // terminal does with a short listing.
+                FlowLayout column = new FlowLayout(getContext(), 0);
+                for (JSONObject action : shown) {
+                    column.addView(listingRow(action));
+                }
+                items = column;
+            } else {
+                FlowLayout flow = new FlowLayout(getContext(), buttons.gap());
+                for (JSONObject action : shown) {
+                    flow.addView(allPlaces ? readout(action) : actionButton(action));
+                }
+                items = flow;
+            }
+
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            params.bottomMargin = buttons.dp(8);
+            if (allPlaces) {
+                items.setBackground(buttons.display());
+                int pad = asListing ? buttons.dp(6) : buttons.dp(10);
+                items.setPadding(buttons.dp(8), pad, buttons.dp(8), pad);
+            } else if (Buttons.skin().sections) {
+                // Keys are mounted in a milled region rather than standing on the
+                // bare panel, so a group of them reads as one block of controls.
+                items.setBackground(buttons.section());
+                items.setPadding(buttons.dp(10), buttons.dp(10),
+                        buttons.dp(10), buttons.dp(10));
+            }
+            stack.addView(items, params);
+        }
+        hint(stack, where);
+    }
+
+    /** One line of a listing: the cursor mark, then the name. */
+    private View listingRow(JSONObject action) {
+        String send = action.optString("send");
+        boolean enter = action.optBoolean("enter");
+        String hint = action.isNull("hint") ? null : action.optString("hint");
+        // The parent directory keeps its own mark. Everything else is a plain name
+        // with room in front of it for the cursor the highlight provides.
+        String label = "up".equals(action.optString("style", "key"))
+                ? ".." : action.optString("label");
+        return buttons.row(label, hint, v -> host.onAction(send, enter));
+    }
+
+    /** A line on a screen: lit text, no cap, and the selection is an inversion. */
+    private View readout(JSONObject action) {
+        String send = action.optString("send");
+        boolean enter = action.optBoolean("enter");
+        String hint = action.isNull("hint") ? null : action.optString("hint");
+        View view = buttons.readout(action.optString("label"), hint,
+                v -> host.onAction(send, enter));
+
+        if ("up".equals(action.optString("style", "key")) && view instanceof TextView) {
+            ((TextView) view).setCompoundDrawablesWithIntrinsicBounds(
+                    Glyphs.drawable(getContext(), Glyphs.Kind.UP, Buttons.skin().phosphor,
+                            buttons.iconSizeDp()), null, null, null);
+            ((TextView) view).setCompoundDrawablePadding(buttons.dp(6));
+        }
+        return view;
+    }
+
+    /** Somewhere to go, as opposed to something to do. */
+    private static boolean isPlace(JSONObject action) {
+        String style = action.optString("style", "key");
+        return "up".equals(style) || "dir".equals(style) || "git".equals(style)
+                || "fav".equals(style);
+    }
+
+    private static int dim(int colour, float amount) {
+        return android.graphics.Color.rgb(
+                (int) (android.graphics.Color.red(colour) * amount),
+                (int) (android.graphics.Color.green(colour) * amount),
+                (int) (android.graphics.Color.blue(colour) * amount));
     }
 
     // -------------------------------------------------------------- dictation

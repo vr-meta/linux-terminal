@@ -77,6 +77,20 @@ func (s *Session) pushContext(force bool) {
 			isShell = true
 		} else if kind != "" {
 			tool = &kind
+		} else {
+			// Unrecognised, but still not the shell: make, pytest, docker compose,
+			// journalctl -f. The bar used to leave tool nil here, which sent it
+			// down the "at a prompt" branch and offered directories to cd into —
+			// while a program owned the terminal. Pressing one typed cd 'server'
+			// and a newline into that program's stdin.
+			//
+			// What is known is read rather than guessed: the foreground process
+			// group is not the shell's, so the shell is not reading. That alone
+			// rules out every action that assumes a prompt. The fallback table is
+			// what is offered instead, and the name stays the binary's own so the
+			// header still says what is running.
+			fallback := fallbackTool
+			tool = &fallback
 		}
 	}
 

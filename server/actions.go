@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Action is one button. The client draws label, colours it by style, and on a press
@@ -172,10 +177,72 @@ func installed(name string) bool {
 	if cached, ok := installedCache.Load(name); ok {
 		return cached.(bool)
 	}
-	_, err := exec.LookPath(name)
-	installedCache.Store(name, err == nil)
-	return err == nil
+	found := false
+	for _, dir := range sessionPath() {
+		if dir == "" {
+			continue
+		}
+		// Stat, not LookPath: the search list is the shell's, not this process's,
+		// and LookPath can only be told about the second. Following the symlink is
+		// wanted — every one of these tools installs itself as one.
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			found = true
+			break
+		}
+	}
+	installedCache.Store(name, found)
+	return found
 }
+
+// sessionShell is the shell sessions are opened with. Set once at start-up,
+// because the button tables have to ask the same shell the session will get.
+var sessionShell = "/bin/bash"
+
+// sessionPath is the PATH a shell opened here would search, which is emphatically
+// not the PATH this process has.
+//
+// This was `exec.LookPath`, and it was wrong in the one place it matters. The
+// server usually runs as a `systemd --user` service, whose PATH is the bare
+// system one — /usr/bin and friends. Every tool this machine's owner actually
+// installed lives in ~/.local/bin, which is put on the PATH by their .bashrc.
+// So `claude`, `codex` and the rest were plainly there, plainly runnable in the
+// session the button would have typed into, and the bar refused to offer them
+// because the *service* could not see them. Started from a terminal instead,
+// the same server offered all of them — which is why this survived so long.
+//
+// Asked the way a session is opened: interactive, not a login shell. That is what
+// pty.Start gives you, and on this machine it is the difference between a PATH
+// with ~/.local/bin on it and one without.
+//
+// Read once. A shell is forked for it, so it must not happen per refresh — and a
+// tool installed while the server runs still needs a restart to appear, which is
+// the same trade the cache above already made.
+var sessionPath = sync.OnceValue(func() []string {
+	own := filepath.SplitList(os.Getenv("PATH"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// The leading newline is deliberate: an interactive shell may greet, and the
+	// answer is whatever the last line is.
+	cmd := exec.CommandContext(ctx, sessionShell, "-ic", `printf '\n%s\n' "$PATH"`)
+	cmd.Env = shellEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("cannot read the shell's PATH (%v) — offering only what this process can see", err)
+		return own
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	answer := strings.TrimSpace(lines[len(lines)-1])
+	if !strings.Contains(answer, string(filepath.ListSeparator)) {
+		// Not a PATH. A shell whose printf takes a list rather than a string —
+		// fish — lands here, and the process's own PATH is a better answer than
+		// a fragment of one.
+		return own
+	}
+	return filepath.SplitList(answer)
+})
 
 func trim(text string, limit int) string {
 	if len(text) <= limit {

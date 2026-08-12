@@ -130,6 +130,9 @@ func main() {
 	if shell == "" {
 		shell = "/bin/bash"
 	}
+	// The button tables ask this shell what a session's PATH would be; see
+	// sessionPath in actions.go.
+	sessionShell = shell
 
 	name := *flagName
 	if name == "" {
@@ -202,13 +205,25 @@ func main() {
 
 	// systray owns the goroutine it is given and never returns it, so the tray
 	// takes the main one and accepting moves aside.
-	if *flagTray && trayAvailable() {
+	//
+	// Waiting for the desktop happens on this side of the fence rather than
+	// inside the library: a user service starts at login, before anything is
+	// offering to show an icon, and the wait is what makes the icon appear a few
+	// seconds later instead of never. Sessions are served throughout — accepting
+	// has already moved to its own goroutine by then.
+	if *flagTray && trayPossible() {
 		go accept()
-		server.runTray()
-		return
+		if awaitTrayHost() {
+			server.runTray()
+			return
+		}
+		// The bus is unusable, so there will be no icon — but the shells this
+		// process is serving are not the tray's to end.
+		log.Printf("running without a tray icon")
+		select {}
 	}
 	if *flagTray {
-		log.Printf("no desktop session here — running without a tray icon")
+		log.Printf("no session bus here — running without a tray icon")
 	}
 	accept()
 }

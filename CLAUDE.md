@@ -274,6 +274,28 @@ REG_WAIT timeout, including boots that never froze; Sunshine was already on
 `vaapi` and had quit beforehand; and the Quest is not an MTP device in adb mode,
 so gvfs never touches it.
 
+**A service's environment is not a terminal's, and two features died of it.**
+`systemd --user` starts the server at login with the bare system PATH and with
+no `DISPLAY` or `WAYLAND_DISPLAY` — the graphical session imports those *after*
+it is already running. So `installed()` could not see `claude`, `codex` or
+anything else in `~/.local/bin` and the bar stopped offering them, and the tray
+decided there was no desktop and never showed an icon at all. Both worked
+perfectly when the server was started from a terminal, which is how they
+survived. Ask the shell for the PATH (`$SHELL -ic`, the mode a session is opened
+in) and ask the bus for a tray host, not the environment.
+[`docs/service.md`](docs/service.md) has the commands that tell the two apart.
+
+**A drawn glyph lives in the key's background, and swapping that background
+takes it with it.** `Buttons.centre()` layers a `Glyphs` drawable over whatever
+background the key has, because a compound drawable is laid out beside the text
+and lands off-centre on a key with no text. Anything that later replaces the
+background — the rocker halves do — empties the key. `Buttons` therefore keeps
+the glyph in a `WeakHashMap` so a replacement can put it back.
+
+The obvious fix is a foreground, and it does not work: `setForeground` on these
+`TextView`s is simply not drawn, which emptied every arrow and the backspace key
+on the keypad while looking like the correct answer. Do not try it again.
+
 **Signal dispositions survive `exec`.** An earlier server set `SIGCHLD` to
 `SIG_IGN` to avoid zombies; every descendant that reaps its own children then
 got `ECHILD` from `waitpid`, and Claude Code's hooks failed with exactly that.

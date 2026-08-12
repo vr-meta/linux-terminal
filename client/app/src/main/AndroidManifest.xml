@@ -74,6 +74,22 @@
             android:label="terminal bar"
             android:windowSoftInputMode="adjustResize|stateHidden"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+            <!-- Tall enough to open on a layout that needs the height, and with a
+                 floor low enough that the bar can still be squeezed into a strip
+                 when that is what the moment wants.
+
+                 It opens as a strip and grows if you want more of it.
+
+                 This went to 900dp for a while, on the argument that the console
+                 arrangement needs the height and should not open already scrolled.
+                 Worn, that was wrong twice over: a panel is pulled in close, where
+                 900dp of it fills the view and pushes the terminal out of the way,
+                 and the listings are elastic anyway — a short window shows fewer
+                 rows rather than a broken layout. Window size is the only window
+                 property Horizon OS gives a 2D app (docs/horizon.md), and the
+                 right use of it is to open small: growing a window by hand takes a
+                 second, and a panel that arrives too big has already taken the
+                 space it was going to be judged on. -->
             <layout
                 android:defaultWidth="1150dp"
                 android:defaultHeight="460dp"

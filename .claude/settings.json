@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/git-no-attribution.sh" },
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/bash-guard.sh" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/edit-guard.sh" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/go-fmt-gate.sh" }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(make fmt)",
+      "Bash(make server)",
+      "Bash(make test)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(gofmt:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(ss -ltnp)",
+      "Bash(adb devices:*)",
+      "Bash(adb logcat:*)",
+      "Bash(./server/linux-terminal-server --dump-context:*)",
+      "Bash(./server/linux-terminal-server --tools)"
+    ],
+    "deny": [
+      "Read(~/.config/linux-terminal/**)",
+      "Read(./**/*.keystore)"
+    ]
+  }
+}

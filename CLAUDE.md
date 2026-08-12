@@ -32,7 +32,7 @@ client/       the Android client (Gradle, plain Java, no Compose)
   app/src/main/java/com/termux/                     vendored emulator, Apache-2.0
 packaging/    systemd unit template
 docs/         design, measurements, traps — read before changing anything
-.claude/      skills: the order of work, installing, pairing, diagnosing, releasing
+.claude/      skills, hooks and one reviewer — the rules that are executed
 ```
 
 ### Key files
@@ -126,6 +126,17 @@ read the `docs/` that apply, build, verify by fact, write down what was learned,
 then commit. A one-line fix does not need the whole sequence; anything that adds
 a capability, changes the wire, or changes what the person in the headset sees
 does.
+
+**Four of the rules below are checked rather than asked for.** They live in
+`.claude/hooks/`, they run on every session, and each was written from something
+this repository has already been bitten by rather than from a template: the
+attribution trailer (blocked at `git commit`), `pkill -f linux-terminal`
+(blocked, with the command that works), a signed build without the signing
+environment and an `adb` command with two devices attached (both warned), plus
+`setForeground`, `BlurMaskFilter`, a new client dependency, `import "C"` and
+Cyrillic in a file (noted as the file is saved), and `gofmt` before a turn ends.
+Each script carries its own measurement against the whole tree. A rule that
+turns out to be checkable belongs there and not in another paragraph here.
 
 **Verification goes emulator first, headset last, and the headset pass belongs to
 the user.** There is an AVD for this — `linuxterm`, Android 34 — and every client

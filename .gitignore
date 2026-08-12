@@ -19,4 +19,9 @@ server/linux-terminal-server
 *.pem
 *.key
 
+# The agent configuration is shared; only the per-machine half is not. Skills,
+# hooks and settings.json are the repository's rules and belong to everyone
+# working on it.
+.claude/settings.local.json
+
 *.log

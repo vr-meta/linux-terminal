@@ -13,8 +13,8 @@ android {
         applicationId = "dev.butschster.linuxterminal"
         minSdk = 32
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
     }
 
     // Release builds are signed with a key kept outside the repository, and CI
